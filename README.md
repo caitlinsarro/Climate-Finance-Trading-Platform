@@ -5,9 +5,12 @@ English U.S.-listed climate-finance research cockpit inspired by the earlier Chi
 ## What It Does
 
 - U.S.-listed sector ETF allocation dashboard
+- Client climate-intelligence summary with physical risk, transition risk, CVOR contribution, data confidence, affected holdings, and suggested action
 - Daily climate-alert overlay that moves current ETF allocation from NWS active weather alerts
 - Climate signal from temperature anomaly and weather disaster frequency proxies
+- Dedicated Climate Data Center with live, official, and source-ready physical/transition data inputs
 - Recommended portfolio backtest using the final optimizer weights
+- Daily recommended stock walk-forward backtest over 3 weeks, 3 months, and 3 years
 - Visible backtest dashboard with equity curve, risk metrics, annual results, and methodology notes
 - Portfolio CVOR scenario matrix
 - Company-level issuer scanner for market CVaR and climate value-at-risk components
@@ -22,9 +25,10 @@ English U.S.-listed climate-finance research cockpit inspired by the earlier Chi
 - ETF watchlist across core index, sector, rates/credit, climate/clean energy, and commodities
 - Portfolio optimizer with ETF-only, ETF + stock, and stock-only construction modes
 - Optimizer controls for capital size, short-term vs long-term holding period, and style selection
-- Optimizer output with target weight, target dollars, estimated shares, market score, climate score, and action
+- Automatic optimizer universe that ranks climate-related ETFs and stocks from the current daily climate signal, with optional advanced custom ticker override
+- Optimizer output with target weight, target dollars, estimated shares, market score, physical risk, transition risk, climate score, and action
 - Official climate data inputs from NASA GISTEMP, NOAA GML CO2, and NOAA NCEI billion-dollar disaster events
-- Current climate data panel combining daily NWS alerts with official NASA/NOAA/NCEI inputs
+- Current climate data panel combining daily NWS alerts with official NASA/NOAA/NCEI inputs plus FEMA, NASA FIRMS, AirNow, NOAA CPC/NWPS, EPA GHGRP, EPA eGRID, EIA, NGFS, and SEC EDGAR source mapping
 - Dedicated daily climate intelligence board linking current alerts to related stocks, ETF recommendations, and daily reminders
 - Stock and ETF climate-relevance scoring from NWS alert type, alert intensity, market momentum, and climate exposure mapping
 - Auto-refreshing market and climate allocation views for a cleaner investor cockpit
@@ -69,15 +73,21 @@ The optimizer is designed for an asset-investor workflow:
 - `Growth`: gives more weight to market momentum and single-name upside
 - `Low volatility`: reduces high-volatility and high-tail-risk exposure
 
-For each asset, the optimizer estimates a score from market behavior, climate risk, and volatility, then converts it into a portfolio weight. It multiplies the weight by the selected capital amount to show target dollars and estimated shares.
+By default, the optimizer uses an automatic climate universe. It ranks climate-related ETFs and stocks from the daily climate relation signal, broad-market anchors, and sector physical/transition risk profiles. Advanced users can still override the ETF and stock candidate lists manually.
+
+For each asset, the optimizer estimates a score from market behavior, physical climate risk, transition risk, Method 2/CVOR proxy, and volatility, then converts it into a portfolio weight. It multiplies the weight by the selected capital amount to show target dollars and estimated shares.
 
 The backtest section now uses those final optimizer weights as the model portfolio and compares them with an equal-weight basket of the same selected assets. This makes the backtest match the actual recommendation shown by the system. It is a current-recommendation backtest, not a pure historical walk-forward test, because today's weights are applied backward through history.
+
+The daily recommended stock backtest is a separate walk-forward test. Each signal day selects the top five stocks using prior market trend, volatility, annual climate pressure, and sector physical/transition risk, then compares next-day performance with the equal-weight recommendation universe over 3-week, 3-month, and 3-year windows.
 
 ## Climate Data Sources
 
 - NASA GISTEMP land-ocean annual temperature anomaly CSV
 - NOAA Global Monitoring Laboratory Mauna Loa monthly CO2 CSV
 - NOAA National Centers for Environmental Information billion-dollar weather and climate disaster event JSON
+- NWS active weather alerts for acute daily physical climate pressure
+- FEMA National Risk Index, NASA FIRMS, AirNow, NOAA CPC/NWPS, EPA GHGRP, EPA eGRID, EIA Open Data, NGFS scenarios, and SEC EDGAR APIs as source-ready expansion points for richer physical and transition risk mapping
 
 The app caches official climate data locally under `data/official_climate_data_cache.json` and falls back to built-in proxy values if an external source is unavailable.
 

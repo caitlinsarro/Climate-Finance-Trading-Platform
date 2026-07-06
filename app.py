@@ -65,6 +65,19 @@ CLIMATE_DATA_CACHE = DATA_DIR / "official_climate_data_cache.json"
 NWS_ACTIVE_ALERTS_URL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert"
 DAILY_CLIMATE_CACHE = DATA_DIR / "daily_climate_alerts_cache.json"
 NWS_USER_AGENT = "JennesonClimateFinancePrototype/1.0 (local research)"
+DAILY_RECO_BACKTEST_CACHE = DATA_DIR / "daily_recommendation_backtest_cache.json"
+FEMA_NRI_URL = "https://www.fema.gov/flood-maps/products-tools/national-risk-index"
+FEMA_NRI_DATA_URL = "https://www.fema.gov/about/openfema/data-sets/national-risk-index-data"
+NASA_FIRMS_URL = "https://firms.modaps.eosdis.nasa.gov/"
+AIRNOW_API_URL = "https://docs.airnowapi.org/"
+NOAA_CPC_URL = "https://www.cpc.ncep.noaa.gov/"
+NOAA_WATER_API_URL = "https://water.noaa.gov/about/api"
+NOAA_STORM_EVENTS_URL = "https://www.ncei.noaa.gov/stormevents/"
+EPA_GHGRP_URL = "https://www.epa.gov/ghgreporting/ghgrp-reported-data"
+EPA_EGRID_URL = "https://www.epa.gov/egrid"
+EIA_OPEN_DATA_URL = "https://www.eia.gov/opendata/"
+NGFS_SCENARIOS_URL = "https://www.ngfs.net/ngfs-scenarios-portal/"
+SEC_EDGAR_API_URL = "https://www.sec.gov/search-filings/edgar-application-programming-interfaces"
 
 
 SECTOR_ETFS = {
@@ -176,6 +189,189 @@ COMPANY_SECTOR_SENSITIVITY = {
     "Real Estate": 0.68,
     "Communication Services": 0.40,
 }
+
+
+SECTOR_TRANSITION_FACTORS = {
+    "Energy": {
+        "emissions": 0.94,
+        "policy": 0.90,
+        "carbon_price": 0.96,
+        "transition_opportunity": 0.18,
+        "headline": "High fossil fuel, methane, and carbon-price sensitivity.",
+    },
+    "Utilities": {
+        "emissions": 0.78,
+        "policy": 0.76,
+        "carbon_price": 0.74,
+        "transition_opportunity": 0.62,
+        "headline": "Grid mix, reliability capex, and clean-power transition matter.",
+    },
+    "Industrials": {
+        "emissions": 0.62,
+        "policy": 0.58,
+        "carbon_price": 0.60,
+        "transition_opportunity": 0.42,
+        "headline": "Supply chain, process heat, transport, and infrastructure capex.",
+    },
+    "Technology": {
+        "emissions": 0.30,
+        "policy": 0.34,
+        "carbon_price": 0.28,
+        "transition_opportunity": 0.70,
+        "headline": "Asset-light, but data-center power demand and grid emissions matter.",
+    },
+    "Financial Services": {
+        "emissions": 0.42,
+        "policy": 0.56,
+        "carbon_price": 0.46,
+        "transition_opportunity": 0.46,
+        "headline": "Transition risk enters through credit, insurance, and financed exposure.",
+    },
+    "Financials": {
+        "emissions": 0.42,
+        "policy": 0.56,
+        "carbon_price": 0.46,
+        "transition_opportunity": 0.46,
+        "headline": "Transition risk enters through credit, insurance, and financed exposure.",
+    },
+    "Consumer Cyclical": {
+        "emissions": 0.44,
+        "policy": 0.42,
+        "carbon_price": 0.38,
+        "transition_opportunity": 0.44,
+        "headline": "Consumer demand, logistics, and product energy intensity.",
+    },
+    "Consumer Defensive": {
+        "emissions": 0.38,
+        "policy": 0.36,
+        "carbon_price": 0.34,
+        "transition_opportunity": 0.36,
+        "headline": "Agriculture, packaging, logistics, and water stress are key channels.",
+    },
+    "Healthcare": {
+        "emissions": 0.28,
+        "policy": 0.30,
+        "carbon_price": 0.26,
+        "transition_opportunity": 0.32,
+        "headline": "Lower direct transition beta, with supply-chain and facility exposure.",
+    },
+    "Basic Materials": {
+        "emissions": 0.82,
+        "policy": 0.72,
+        "carbon_price": 0.80,
+        "transition_opportunity": 0.36,
+        "headline": "High process emissions and commodity transition sensitivity.",
+    },
+    "Real Estate": {
+        "emissions": 0.52,
+        "policy": 0.62,
+        "carbon_price": 0.48,
+        "transition_opportunity": 0.38,
+        "headline": "Building standards, insurance, and energy-efficiency capex.",
+    },
+    "Communication Services": {
+        "emissions": 0.30,
+        "policy": 0.32,
+        "carbon_price": 0.28,
+        "transition_opportunity": 0.48,
+        "headline": "Lower direct exposure, with power and data-center links.",
+    },
+}
+
+
+CLIMATE_DATA_SOURCE_CATALOG = [
+    {
+        "name": "NWS Active Alerts",
+        "risk_type": "Acute physical",
+        "status": "Live / cached",
+        "url": NWS_ACTIVE_ALERTS_URL,
+        "client_use": "Today's heat, flood, fire, tropical storm, severe storm, winter, and air-quality alert pulse.",
+    },
+    {
+        "name": "NASA GISTEMP",
+        "risk_type": "Chronic physical",
+        "status": "Official / cached",
+        "url": NASA_GISTEMP_CSV_URL,
+        "client_use": "Current warming input and long-run temperature pressure.",
+    },
+    {
+        "name": "NOAA GML CO2",
+        "risk_type": "Transition pressure",
+        "status": "Official / cached",
+        "url": NOAA_CO2_CSV_URL,
+        "client_use": "Atmospheric CO2 trend used as a transition-pressure and policy-lag indicator.",
+    },
+    {
+        "name": "NOAA NCEI Billion-Dollar Disasters",
+        "risk_type": "Physical loss history",
+        "status": "Official / cached",
+        "url": NCEI_BILLION_EVENTS_JSON_URL,
+        "client_use": "Disaster frequency and loss proxy for chronic U.S. physical-risk calibration.",
+    },
+    {
+        "name": "FEMA National Risk Index",
+        "risk_type": "Baseline physical",
+        "status": "Source-ready",
+        "url": FEMA_NRI_DATA_URL,
+        "client_use": "County and tract hazard baseline for future issuer facility/geographic mapping.",
+    },
+    {
+        "name": "NASA FIRMS",
+        "risk_type": "Wildfire / smoke",
+        "status": "Source-ready",
+        "url": NASA_FIRMS_URL,
+        "client_use": "Near-real-time satellite active-fire signal for wildfire-sensitive issuers.",
+    },
+    {
+        "name": "AirNow",
+        "risk_type": "Air quality",
+        "status": "API-ready",
+        "url": AIRNOW_API_URL,
+        "client_use": "AQI and PM2.5 smoke data for health, labor, logistics, and regional disruption risk.",
+    },
+    {
+        "name": "NOAA CPC / NWPS",
+        "risk_type": "Forecast physical",
+        "status": "Source-ready",
+        "url": NOAA_CPC_URL,
+        "client_use": "Drought, temperature, precipitation, and flood outlooks for 1-12 week risk framing.",
+    },
+    {
+        "name": "EPA GHGRP",
+        "risk_type": "Transition emissions",
+        "status": "Source-ready",
+        "url": EPA_GHGRP_URL,
+        "client_use": "Facility-level emissions for issuer transition-risk mapping.",
+    },
+    {
+        "name": "EPA eGRID",
+        "risk_type": "Power-sector transition",
+        "status": "Source-ready",
+        "url": EPA_EGRID_URL,
+        "client_use": "Electricity generation mix and emission rates for utilities and data-center power exposure.",
+    },
+    {
+        "name": "EIA Open Data",
+        "risk_type": "Energy transition",
+        "status": "API-ready",
+        "url": EIA_OPEN_DATA_URL,
+        "client_use": "Energy prices, generation mix, demand, fuel use, and emissions series.",
+    },
+    {
+        "name": "NGFS Scenarios",
+        "risk_type": "Scenario transition",
+        "status": "Scenario-ready",
+        "url": NGFS_SCENARIOS_URL,
+        "client_use": "Orderly, disorderly, and hot-house pathways for carbon-price and macro transition shocks.",
+    },
+    {
+        "name": "SEC EDGAR APIs",
+        "risk_type": "Disclosure / regulation",
+        "status": "API-ready",
+        "url": SEC_EDGAR_API_URL,
+        "client_use": "Issuer filings, climate-risk language, capex, insurance, and regulatory disclosure signals.",
+    },
+]
 
 
 CLIMATE_PROXY = [
@@ -1507,6 +1703,155 @@ def etf_climate_profile(symbol):
     return etf_group(symbol), 0.50, "ETF climate score is estimated from group exposure."
 
 
+def sector_transition_profile(sector):
+    factors = SECTOR_TRANSITION_FACTORS.get(sector) or SECTOR_TRANSITION_FACTORS.get("Technology")
+    emissions = safe_float(factors.get("emissions"), 0.50)
+    policy = safe_float(factors.get("policy"), 0.50)
+    carbon_price = safe_float(factors.get("carbon_price"), 0.50)
+    opportunity = safe_float(factors.get("transition_opportunity"), 0.40)
+    risk = clamp(0.36 * emissions + 0.28 * policy + 0.26 * carbon_price - 0.12 * opportunity + 0.08, 0.04, 0.96)
+    return {
+        "risk": round(risk, 4),
+        "emissions": emissions,
+        "policy": policy,
+        "carbon_price": carbon_price,
+        "opportunity": opportunity,
+        "headline": factors.get("headline", "Transition exposure estimated from sector profile."),
+    }
+
+
+def historical_climate_pressure_for_year(year, climate_rows=None):
+    climate_rows = climate_rows or climate_signal()
+    if not climate_rows:
+        return 0.45
+    lookup = {int(r.get("year", 0)): r for r in climate_rows}
+    available_year = max((y for y in lookup if y <= int(year)), default=max(lookup))
+    row = lookup.get(available_year, climate_rows[-1])
+    score = safe_float(row.get("climate_risk_score"), 0.0)
+    threshold = safe_float(row.get("top_quartile_threshold"), 0.0)
+    normalized = 0.50 + 0.18 * score + (0.16 if score >= threshold else -0.04)
+    return round(clamp(normalized, 0.08, 0.92), 4)
+
+
+def climate_source_rows(daily_signal=None, context=None):
+    daily_signal = daily_signal or load_daily_climate_signal()
+    context = context or climate_data_context()
+    rows = []
+    for item in CLIMATE_DATA_SOURCE_CATALOG:
+        status = item["status"]
+        mode = "Client reference"
+        if item["name"] == "NWS Active Alerts":
+            status = daily_signal.get("source_mode", status)
+            mode = "Live model input"
+        elif item["name"] in {"NASA GISTEMP", "NOAA GML CO2", "NOAA NCEI Billion-Dollar Disasters"}:
+            status = context.get("source_mode", status)
+            mode = "Official model input"
+        elif item["name"] in {"EPA GHGRP", "EPA eGRID", "EIA Open Data", "NGFS Scenarios", "SEC EDGAR APIs"}:
+            mode = "Transition-risk source"
+        else:
+            mode = "Physical-risk source"
+        rows.append(
+            {
+                **item,
+                "status": status,
+                "model_mode": mode,
+            }
+        )
+    return rows
+
+
+def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summary=None, context=None):
+    daily_signal = daily_signal or load_daily_climate_signal()
+    context = context or climate_data_context()
+    cvor_summary = cvor_summary or {}
+    categories = daily_signal.get("category_intensity", {}) or {}
+    daily_pressure = safe_float(daily_signal.get("allocation_pressure"), 0.0)
+    acute_physical = clamp(
+        0.34 * daily_pressure
+        + 0.15 * safe_float(categories.get("heat"), 0.0)
+        + 0.13 * safe_float(categories.get("flood"), 0.0)
+        + 0.13 * safe_float(categories.get("fire"), 0.0)
+        + 0.14 * safe_float(categories.get("tropical"), 0.0)
+        + 0.08 * safe_float(categories.get("storm"), 0.0)
+        + 0.03 * safe_float(categories.get("air_quality"), 0.0),
+        0.0,
+        1.0,
+    )
+    chronic_physical = clamp(
+        0.38 * clamp((safe_float(context.get("current_warming"), CURRENT_WARMING_C) - 0.75) / 0.85, 0, 1)
+        + 0.34 * clamp((safe_float(context.get("disaster_10y_avg"), 15) - 8) / 20, 0, 1)
+        + 0.28 * clamp((safe_float(context.get("co2_10y_change"), 20) - 12) / 25, 0, 1),
+        0.0,
+        1.0,
+    )
+    physical_score = clamp(0.58 * acute_physical + 0.42 * chronic_physical, 0.0, 1.0)
+
+    macro_transition = clamp(
+        0.38 * clamp((safe_float(context.get("co2_ppm"), 420) - 390) / 55, 0, 1)
+        + 0.25 * clamp((safe_float(context.get("co2_10y_change"), 20) - 12) / 25, 0, 1)
+        + 0.22 * 0.64
+        + 0.15 * daily_pressure,
+        0.0,
+        1.0,
+    )
+    transition_weighted = macro_transition
+    top_affected = []
+    if latest_alloc:
+        total_weight = sum(safe_float(r.get("climate_weight"), 0.0) for r in latest_alloc) or 1.0
+        transition_weighted = 0.0
+        for row in latest_alloc:
+            weight = safe_float(row.get("climate_weight"), 0.0) / total_weight
+            sector = row.get("sector") or SECTOR_ETFS.get(row.get("ticker"), {}).get("name") or "Technology"
+            transition = sector_transition_profile(sector)
+            sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, safe_float(SECTOR_ETFS.get(row.get("ticker"), {}).get("physical"), 0.50))
+            physical = clamp(0.48 * safe_float(row.get("daily_sector_stress"), physical_score) + 0.34 * sensitivity * physical_score + 0.18 * chronic_physical, 0.0, 1.0)
+            combined = clamp(0.48 * physical + 0.36 * transition["risk"] + 0.16 * safe_float(row.get("climate_weight"), 0.0), 0.0, 1.0)
+            transition_weighted += weight * transition["risk"]
+            if combined >= 0.28:
+                top_affected.append(
+                    {
+                        "ticker": row.get("ticker"),
+                        "sector": sector,
+                        "weight": row.get("climate_weight"),
+                        "physical_risk": round(physical, 4),
+                        "transition_risk": transition["risk"],
+                        "combined_risk": round(combined, 4),
+                        "action": "Hedge / reduce" if combined >= 0.68 else ("Watch closely" if combined >= 0.46 else "Monitor"),
+                        "driver": row.get("daily_driver") or transition["headline"],
+                    }
+                )
+    transition_score = clamp(0.58 * transition_weighted + 0.42 * macro_transition, 0.0, 1.0)
+    cvor_score = clamp(safe_float(cvor_summary.get("cvor_95_loss_rate"), 0.0) / 0.12, 0.0, 1.0)
+    total_score = clamp(0.40 * physical_score + 0.34 * transition_score + 0.26 * cvor_score, 0.0, 1.0)
+    source_rows = climate_source_rows(daily_signal=daily_signal, context=context)
+    live_inputs = sum(1 for r in source_rows if "input" in r["model_mode"].lower())
+    confidence = clamp(0.50 + 0.08 * live_inputs + 0.08 * (1 if latest_alloc else 0), 0.0, 0.92)
+    top_affected = sorted(top_affected, key=lambda r: r["combined_risk"], reverse=True)[:6]
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "risk_level": "High" if total_score >= 0.66 else ("Elevated" if total_score >= 0.44 else "Watch"),
+        "total_score": round(total_score, 4),
+        "physical_score": round(physical_score, 4),
+        "acute_physical_score": round(acute_physical, 4),
+        "chronic_physical_score": round(chronic_physical, 4),
+        "transition_score": round(transition_score, 4),
+        "macro_transition_score": round(macro_transition, 4),
+        "cvor_score": round(cvor_score, 4),
+        "confidence": round(confidence, 4),
+        "headline": (
+            f"{daily_signal.get('top_driver', 'climate').replace('_', ' ')} is the top daily driver; "
+            f"transition pressure is {'high' if transition_score >= 0.62 else 'moderate' if transition_score >= 0.38 else 'low'}."
+        ),
+        "client_action": (
+            "Reduce climate concentration and keep hedge sleeve active"
+            if total_score >= 0.66
+            else ("Hold core exposures, raise monitoring on affected sectors" if total_score >= 0.44 else "Maintain allocation with routine monitoring")
+        ),
+        "top_affected": top_affected,
+        "source_rows": source_rows,
+    }
+
+
 def optimizer_mode(mode):
     mode = str(mode or "etf_stock").lower()
     return mode if mode in OPTIMIZER_MODE_LABELS else "etf_stock"
@@ -1534,15 +1879,49 @@ def allocation_signal(total_score, climate_score, risk_score, weight):
     return "Small weight / monitor"
 
 
+def automatic_optimizer_universe(daily_signal=None):
+    daily_signal = daily_signal or load_daily_climate_signal()
+    etf_ranked = []
+    for item in DAILY_CLIMATE_ETFS:
+        relation = climate_relation_score(item.get("exposure", {}), daily_signal)
+        etf_ranked.append((relation, item["ticker"]))
+    stock_ranked = []
+    for item in DAILY_CLIMATE_STOCKS:
+        relation = climate_relation_score(item.get("exposure", {}), daily_signal)
+        stock_ranked.append((relation, item["ticker"]))
+
+    etfs = ["SPY", "QQQ"]
+    for _, ticker in sorted(etf_ranked, reverse=True):
+        if ticker not in etfs:
+            etfs.append(ticker)
+    for ticker in DEFAULT_OPTIMIZER_ETFS:
+        if ticker not in etfs:
+            etfs.append(ticker)
+
+    stocks = []
+    for _, ticker in sorted(stock_ranked, reverse=True):
+        if ticker not in stocks:
+            stocks.append(ticker)
+    for ticker in DEFAULT_OPTIMIZER_STOCKS:
+        if ticker not in stocks:
+            stocks.append(ticker)
+
+    return etfs[:10], stocks[:10]
+
+
 def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", style="balanced", etfs="", stocks=""):
     mode = optimizer_mode(mode)
     horizon = optimizer_horizon(horizon)
     style_key = optimizer_style(style)
     profile = OPTIMIZER_STYLES[style_key]
     capital_value = clamp(safe_float(capital, DEFAULT_PORTFOLIO_VALUE), 10_000, 5_000_000_000)
+    daily_signal = load_daily_climate_signal()
+    auto_etfs, auto_stocks = automatic_optimizer_universe(daily_signal)
+    custom_etfs = bool(str(etfs or "").strip())
+    custom_stocks = bool(str(stocks or "").strip())
 
-    etf_symbols = normalize_symbols(etfs, max_count=18) if etfs else list(DEFAULT_OPTIMIZER_ETFS)
-    stock_symbols = normalize_symbols(stocks, max_count=12) if stocks else list(DEFAULT_OPTIMIZER_STOCKS)
+    etf_symbols = normalize_symbols(etfs, max_count=18) if custom_etfs else auto_etfs
+    stock_symbols = normalize_symbols(stocks, max_count=12) if custom_stocks else auto_stocks
     include_etfs = mode in {"etf_only", "etf_stock"}
     include_stocks = mode in {"stock_only", "etf_stock"}
     if not include_etfs:
@@ -1555,8 +1934,8 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
         if symbol not in symbols:
             symbols.append(symbol)
     if not symbols:
-        symbols = list(DEFAULT_OPTIMIZER_ETFS)
-        etf_symbols = list(DEFAULT_OPTIMIZER_ETFS)
+        symbols = list(auto_etfs or DEFAULT_OPTIMIZER_ETFS)
+        etf_symbols = list(auto_etfs or DEFAULT_OPTIMIZER_ETFS)
         include_etfs = True
 
     market_period = "1d" if horizon == "short" else "3mo"
@@ -1571,8 +1950,14 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
         except Exception:
             stock_scan = {}
 
-    daily_signal = load_daily_climate_signal()
     daily_pressure = safe_float(daily_signal.get("allocation_pressure"), 0.0)
+    climate_context = climate_data_context()
+    chronic_physical = clamp(
+        0.50 * clamp((safe_float(climate_context.get("current_warming"), CURRENT_WARMING_C) - 0.75) / 0.85, 0, 1)
+        + 0.50 * clamp((safe_float(climate_context.get("disaster_10y_avg"), 15) - 8) / 20, 0, 1),
+        0.0,
+        1.0,
+    )
     rows = []
     for symbol in symbols:
         stats = market_stats(chart_lookup.get(symbol, []))
@@ -1606,6 +1991,21 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
             climate_score = clamp(1 - climate_risk, 0.05, 0.95)
             rationale = f"{sector}; {note} {'Today 1m trend' if short_term else '3M trend'} {stats['period_return']:.2%}."
 
+        transition = sector_transition_profile(sector)
+        physical_risk = clamp(0.50 * climate_risk + 0.30 * daily_pressure + 0.20 * chronic_physical, 0.03, 0.97)
+        transition_risk = safe_float(transition.get("risk"), 0.50)
+        climate_score = clamp(
+            0.55 * climate_score
+            + 0.25 * (1 - physical_risk)
+            + 0.20 * (1 - transition_risk)
+            + 0.06 * safe_float(transition.get("opportunity"), 0.40),
+            0.05,
+            0.95,
+        )
+        attribution = (
+            f"Physical {physical_risk:.0%}; transition {transition_risk:.0%}; "
+            f"market {market_score:.0%}; risk control {risk_score:.0%}."
+        )
         total_score = (
             profile["market_weight"] * market_score
             + profile["climate_weight"] * climate_score
@@ -1626,11 +2026,14 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
                 "volatility": round(stats["volatility"], 5),
                 "market_score": round(market_score, 4),
                 "climate_score": round(climate_score, 4),
+                "physical_risk": round(physical_risk, 4),
+                "transition_risk": round(transition_risk, 4),
+                "transition_headline": transition.get("headline"),
                 "risk_score": round(risk_score, 4),
                 "total_score": round(clamp(total_score, 0.01, 0.99), 4),
                 "cvor_proxy": round(cvor_proxy, 4),
                 "raw_weight": max(0.002, clamp(total_score, 0.01, 0.99) ** 1.35),
-                "rationale": rationale,
+                "rationale": f"{rationale} {attribution}",
             }
         )
 
@@ -1676,6 +2079,16 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
         "horizon": horizon,
         "horizon_label": "Short-term holding" if horizon == "short" else "Long-term holding",
         "capital": round(capital_value, 2),
+        "universe_mode": "Custom override" if custom_etfs or custom_stocks else "Automatic climate universe",
+        "auto_etfs": auto_etfs,
+        "auto_stocks": auto_stocks,
+        "custom_etfs": custom_etfs,
+        "custom_stocks": custom_stocks,
+        "universe_note": (
+            "Candidate universe is automatically ranked from today's climate relation signal, default broad-market anchors, and climate-sensitive issuer profiles."
+            if not (custom_etfs or custom_stocks)
+            else "Advanced custom tickers override the automatic climate universe for this optimizer run."
+        ),
         "daily_climate_overlay": daily_pressure,
         "market_source": market["source"],
         "market_period": market["period"],
@@ -2092,6 +2505,302 @@ def recommended_portfolio_backtest(optimizer_rows, capital_value):
     return rows, recommended_backtest_summary(rows), methodology
 
 
+def read_cached_daily_recommendation_backtest(max_age_hours=8):
+    if DAILY_RECO_BACKTEST_CACHE.exists():
+        age_hours = (time.time() - DAILY_RECO_BACKTEST_CACHE.stat().st_mtime) / 3600
+        if age_hours <= max_age_hours:
+            try:
+                cached = json.loads(DAILY_RECO_BACKTEST_CACHE.read_text(encoding="utf-8"))
+                cached["source"] = cached.get("source", "cached daily recommendation backtest")
+                return cached
+            except Exception:
+                pass
+    return None
+
+
+def daily_recommendation_symbols():
+    symbols = []
+    for item in DAILY_CLIMATE_STOCKS:
+        ticker = yahoo_symbol(item.get("ticker"))
+        if ticker and ticker not in symbols:
+            symbols.append(ticker)
+    for ticker in DEFAULT_OPTIMIZER_STOCKS:
+        symbol = yahoo_symbol(ticker)
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+    return symbols[:16]
+
+
+def daily_stock_meta(symbol):
+    for item in DAILY_CLIMATE_STOCKS:
+        if yahoo_symbol(item.get("ticker")) == symbol:
+            return item
+    return {
+        "ticker": symbol,
+        "name": symbol,
+        "theme": guess_sector(symbol),
+        "stance": "mixed",
+        "exposure": {},
+        "note": "Fallback issuer profile from sector and market data.",
+    }
+
+
+def fetch_daily_close_history(symbols, period="3y"):
+    symbols = [yahoo_symbol(s) for s in symbols if yahoo_symbol(s)]
+    prices = {symbol: {} for symbol in symbols}
+    source = "deterministic simulated daily closes"
+    if yf is not None:
+        try:
+            data = yf.download(symbols, period=period, interval="1d", auto_adjust=True, progress=False, threads=True)
+            if data is not None and not getattr(data, "empty", True):
+                for symbol in symbols:
+                    series = extract_close_series(data, symbol, symbols)
+                    if series is None or not hasattr(series, "dropna"):
+                        continue
+                    for idx, value in series.dropna().items():
+                        try:
+                            date = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+                            close = safe_float(value, None)
+                            if close and close > 0:
+                                prices[symbol][date] = round(close, 4)
+                        except Exception:
+                            continue
+                if any(prices.values()):
+                    source = "yfinance daily adjusted closes"
+        except Exception:
+            prices = {symbol: {} for symbol in symbols}
+
+    if not any(prices.values()):
+        days = 820
+        for symbol in symbols:
+            rng = random.Random(sum(ord(c) for c in symbol) + 3200)
+            price = 55 + (sum(ord(c) for c in symbol) % 220)
+            for i in range(days):
+                stamp = time.time() - (days - i) * 86400
+                dt = datetime.fromtimestamp(stamp)
+                if dt.weekday() >= 5:
+                    continue
+                beta = 0.85 + (sum(ord(c) for c in symbol) % 45) / 100
+                drift = rng.gauss(0.00042, 0.014 * beta)
+                price = max(3, price * (1 + drift))
+                prices[symbol][dt.strftime("%Y-%m-%d")] = round(price, 4)
+    else:
+        simulated = fetch_daily_close_history_fallback(symbols)
+        for symbol in symbols:
+            if len(prices.get(symbol, {})) < 80:
+                prices[symbol] = simulated.get(symbol, {})
+                source += " plus deterministic fallback"
+    return prices, source
+
+
+def fetch_daily_close_history_fallback(symbols):
+    prices = {}
+    days = 820
+    for symbol in symbols:
+        rng = random.Random(sum(ord(c) for c in symbol) + 3200)
+        price = 55 + (sum(ord(c) for c in symbol) % 220)
+        prices[symbol] = {}
+        for i in range(days):
+            stamp = time.time() - (days - i) * 86400
+            dt = datetime.fromtimestamp(stamp)
+            if dt.weekday() >= 5:
+                continue
+            beta = 0.85 + (sum(ord(c) for c in symbol) % 45) / 100
+            drift = rng.gauss(0.00042, 0.014 * beta)
+            price = max(3, price * (1 + drift))
+            prices[symbol][dt.strftime("%Y-%m-%d")] = round(price, 4)
+    return prices
+
+
+def trailing_returns_for_symbol(price_map, dates, idx, lookback=20):
+    returns = []
+    start = max(1, idx - lookback + 1)
+    for j in range(start, idx + 1):
+        prev = price_map.get(dates[j - 1])
+        cur = price_map.get(dates[j])
+        if prev and cur:
+            returns.append(cur / prev - 1)
+    return returns
+
+
+def score_daily_recommendation(symbol, prices, dates, idx, climate_rows):
+    price_map = prices.get(symbol, {})
+    current = price_map.get(dates[idx])
+    prior = price_map.get(dates[max(0, idx - 20)])
+    if not current or not prior:
+        return None
+    returns = trailing_returns_for_symbol(price_map, dates, idx, lookback=20)
+    if len(returns) < 8:
+        return None
+    momentum = current / prior - 1
+    mean = sum(returns) / len(returns)
+    vol = math.sqrt(sum((r - mean) ** 2 for r in returns) / max(1, len(returns) - 1))
+    market_score = clamp(0.52 + 1.35 * momentum + 0.20 * mean, 0.02, 0.98)
+    risk_score = clamp(1 - vol / 0.035, 0.02, 0.98)
+    meta = daily_stock_meta(symbol)
+    sector = guess_sector(symbol)
+    transition = sector_transition_profile(sector)
+    climate_pressure = historical_climate_pressure_for_year(int(dates[idx][:4]), climate_rows)
+    physical_sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, 0.50)
+    relation = sum(safe_float(v, 0.0) for v in (meta.get("exposure") or {}).values()) / max(1, len(meta.get("exposure") or {}))
+    stance = meta.get("stance", "mixed")
+    beneficiary = 0.12 if stance == "beneficiary" else (0.05 if stance == "hedge" else 0.0)
+    climate_resilience = clamp(
+        1
+        - 0.48 * physical_sensitivity * climate_pressure
+        - 0.42 * safe_float(transition.get("risk"), 0.50)
+        + 0.18 * beneficiary
+        + 0.05 * relation,
+        0.03,
+        0.97,
+    )
+    total_score = clamp(0.44 * market_score + 0.34 * climate_resilience + 0.22 * risk_score, 0.01, 0.99)
+    return {
+        "ticker": symbol,
+        "name": meta.get("name", symbol),
+        "sector": sector,
+        "theme": meta.get("theme", sector),
+        "stance": stance,
+        "score": round(total_score, 4),
+        "market_score": round(market_score, 4),
+        "climate_resilience": round(climate_resilience, 4),
+        "risk_score": round(risk_score, 4),
+        "momentum_20d": round(momentum, 5),
+        "volatility_20d": round(vol, 5),
+        "physical_pressure": round(physical_sensitivity * climate_pressure, 4),
+        "transition_risk": transition["risk"],
+        "driver": f"{meta.get('theme', sector)}; market {market_score:.0%}, climate resilience {climate_resilience:.0%}.",
+    }
+
+
+def build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_n=5):
+    date_sets = [set(p.keys()) for p in prices.values() if p]
+    if not date_sets:
+        return []
+    common_dates = sorted(set.intersection(*date_sets)) if len(date_sets) == len(symbols) else []
+    all_dates = sorted(set.union(*date_sets))
+    dates = common_dates if len(common_dates) >= 120 else all_dates
+    rows = []
+    for idx in range(25, len(dates) - 1):
+        scored = []
+        available = []
+        for symbol in symbols:
+            price_map = prices.get(symbol, {})
+            current = price_map.get(dates[idx])
+            nxt = price_map.get(dates[idx + 1])
+            if not current or not nxt:
+                continue
+            score = score_daily_recommendation(symbol, prices, dates, idx, climate_rows)
+            if score:
+                scored.append(score)
+                available.append(symbol)
+        if len(scored) < 4:
+            continue
+        picks = sorted(scored, key=lambda r: r["score"], reverse=True)[:top_n]
+        pick_symbols = [p["ticker"] for p in picks]
+        model_returns = []
+        bench_returns = []
+        for symbol in available:
+            current = prices[symbol].get(dates[idx])
+            nxt = prices[symbol].get(dates[idx + 1])
+            ret = nxt / current - 1 if current and nxt else 0.0
+            bench_returns.append(ret)
+            if symbol in pick_symbols:
+                model_returns.append(ret)
+        if not model_returns or not bench_returns:
+            continue
+        rows.append(
+            {
+                "date": dates[idx + 1],
+                "signal_date": dates[idx],
+                "recommended_return": round(sum(model_returns) / len(model_returns), 5),
+                "benchmark_return": round(sum(bench_returns) / len(bench_returns), 5),
+                "return_difference": round(sum(model_returns) / len(model_returns) - sum(bench_returns) / len(bench_returns), 5),
+                "picks": ", ".join(pick_symbols),
+                "top_drivers": "; ".join(p["driver"] for p in picks[:3]),
+                "pick_details": picks,
+                "coverage": f"{len(available)} / {len(symbols)}",
+            }
+        )
+    return rows
+
+
+def max_drawdown_from_returns(returns):
+    wealth = 1.0
+    values = []
+    for ret in returns:
+        wealth *= 1 + ret
+        values.append(wealth)
+    return max_drawdown(values)
+
+
+def summarize_daily_recommendation_window(rows, window_days, label):
+    subset = rows[-window_days:] if len(rows) > window_days else list(rows)
+    model_wealth = 1.0
+    bench_wealth = 1.0
+    out_rows = []
+    for row in subset:
+        model_ret = safe_float(row.get("recommended_return"), 0.0)
+        bench_ret = safe_float(row.get("benchmark_return"), 0.0)
+        model_wealth *= 1 + model_ret
+        bench_wealth *= 1 + bench_ret
+        out = dict(row)
+        out["recommended_wealth"] = round(model_wealth, 4)
+        out["benchmark_wealth"] = round(bench_wealth, 4)
+        out_rows.append(out)
+    returns = [safe_float(r.get("recommended_return"), 0.0) for r in out_rows]
+    bench_returns = [safe_float(r.get("benchmark_return"), 0.0) for r in out_rows]
+    days = len(out_rows)
+    annualized = model_wealth ** (252 / days) - 1 if days and model_wealth > 0 else 0.0
+    summary = {
+        "label": label,
+        "trading_days": days,
+        "recommended_total_return": round(model_wealth - 1, 4),
+        "benchmark_total_return": round(bench_wealth - 1, 4),
+        "excess_return": round(model_wealth - bench_wealth, 4),
+        "excess_wealth_ratio": round(model_wealth / bench_wealth, 4) if bench_wealth else 0,
+        "annualized_return": round(annualized, 4),
+        "recommended_max_drawdown": round(max_drawdown_from_returns(returns), 4),
+        "benchmark_max_drawdown": round(max_drawdown_from_returns(bench_returns), 4),
+        "winning_days": sum(1 for r in out_rows if safe_float(r.get("return_difference"), 0.0) > 0),
+        "latest_picks": out_rows[-1].get("pick_details", []) if out_rows else [],
+    }
+    return {"summary": summary, "rows": out_rows}
+
+
+def daily_recommendation_backtest_payload(force_refresh=False):
+    if not force_refresh:
+        cached = read_cached_daily_recommendation_backtest()
+        if cached:
+            return cached
+    symbols = daily_recommendation_symbols()
+    prices, source = fetch_daily_close_history(symbols, period="3y")
+    climate_rows = climate_signal()
+    rows = build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_n=5)
+    windows = {
+        "3w": summarize_daily_recommendation_window(rows, 15, "3 weeks"),
+        "3m": summarize_daily_recommendation_window(rows, 63, "3 months"),
+        "3y": summarize_daily_recommendation_window(rows, 756, "3 years"),
+    }
+    payload = {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "source": source,
+        "universe": symbols,
+        "methodology": {
+            "model": "Daily walk-forward stock recommendation using prior 20-day market trend, volatility, official annual climate pressure, and sector physical/transition risk.",
+            "selection": "Each signal day selects the top five stocks; the next trading day return is compared with an equal-weight universe benchmark.",
+            "windows": "3 weeks, 3 months, and 3 years are recalculated from daily model returns.",
+            "caveat": "Historical NWS alert archives are not used here; live NWS is used for today's recommendation, while history uses official annual climate pressure plus sector source proxies.",
+        },
+        "windows": windows,
+    }
+    try:
+        DAILY_RECO_BACKTEST_CACHE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    return payload
+
+
 def run_backtest():
     tickers = list(SECTOR_ETFS.keys())
     climate_rows = climate_signal()
@@ -2272,6 +2981,15 @@ def guess_sector(ticker):
         "NEE": "Utilities",
         "DUK": "Utilities",
         "CAT": "Industrials",
+        "DE": "Industrials",
+        "TRV": "Financial Services",
+        "CB": "Financial Services",
+        "FSLR": "Technology",
+        "ENPH": "Technology",
+        "AMZN": "Consumer Cyclical",
+        "GOOGL": "Communication Services",
+        "META": "Communication Services",
+        "TSLA": "Consumer Cyclical",
     }
     return mapping.get(ticker, "Technology")
 
@@ -2304,11 +3022,17 @@ def build_payload():
     current_allocation_rows = [r for r in allocation_rows if r["year"] != latest_year] + latest_alloc
     summary = risk_summary(backtest_rows)
     scenario_rows, cvor_summary = climate_scenario_matrix(current_allocation_rows)
+    climate_intelligence = climate_intelligence_payload(
+        latest_alloc=latest_alloc,
+        daily_signal=daily_signal,
+        cvor_summary=cvor_summary,
+        context=context,
+    )
     latest_regime = regime_for_year(latest_year, climate_rows)
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "platform": "Jenneson Climate-Finance Trading & Risk Platform",
-        "climate_source": "NASA GISTEMP-style anomaly proxy + NOAA billion-dollar disaster frequency proxy",
+        "climate_source": "NWS + NASA/NOAA/NCEI official inputs, with FEMA/EPA/EIA/NGFS/SEC source-ready risk mapping",
         "market_source": market_source,
         "methodology": "Simplified Climate Value at Risk inspired by Dietz et al. (2016)",
         "method2_methodology": {
@@ -2329,6 +3053,8 @@ def build_payload():
         "official_climate_sources": official_climate.get("source_urls", {}),
         "official_climate_notes": official_climate.get("source_notes", []),
         "climate_data_context": context,
+        "climate_intelligence": climate_intelligence,
+        "climate_data_sources": climate_intelligence.get("source_rows", []),
         "daily_climate_signal": daily_signal,
         "allocation_rows": current_allocation_rows,
         "latest_allocation": latest_alloc,
@@ -2393,9 +3119,7 @@ HTML = r"""<!doctype html>
     table{width:100%;border-collapse:collapse;min-width:860px}
     #quoteTable{min-width:100%;table-layout:auto}
     #quoteTable th,#quoteTable td{padding:9px 7px;font-size:12px;white-space:nowrap}
-    #riskTable{min-width:520px}
-    #method2Table{min-width:720px}
-    #allocationTable,#optimizerTable,#backtestYearTable,#backtestMetricTable,#dailyStockTable,#dailyEtfRecoTable,#dailyAlertTable,#universeTable,#scenarioTable,#climateDataTable,#etfTable,#companyTable,#detailTable,#dailyImpactTable{min-width:860px}
+    #allocationTable,#optimizerTable,#backtestYearTable,#backtestMetricTable,#dailyStockTable,#dailyEtfRecoTable,#dailyAlertTable,#scenarioTable,#climateDataTable,#etfTable,#companyTable,#detailTable,#dailyImpactTable{min-width:860px}
     th,td{padding:8px;border-bottom:1px solid #edf1f7;text-align:left;vertical-align:top}
     th{font-size:12px;color:#52627c;background:#fbfcff}
     tr:hover{background:#f7fbff}
@@ -2448,7 +3172,25 @@ HTML = r"""<!doctype html>
     .risk-meter span{display:block;height:100%;border-radius:999px;background:#2563eb}
     .risk-meter span.warn{background:#b66a00}
     .risk-meter span.danger{background:#d93025}
-    @media (max-width:1100px){header{position:relative}.layout{grid-template-columns:1fr}.grid.kpi,.grid.two,.grid.three,.grid.four{grid-template-columns:1fr}aside{position:relative;top:0;height:auto}.kpi-value{font-size:21px}table{min-width:760px}}
+    .client-summary{display:grid;grid-template-columns:1.1fr .9fr;gap:10px}
+    .client-callout{border:1px solid #d7e1ef;border-radius:8px;background:#fff;padding:14px;min-height:132px}
+    .client-callout .title{font-size:13px;font-weight:850;color:#52627c}
+    .client-callout .headline{font-size:24px;font-weight:900;margin:6px 0;color:#172033}
+    .score-bar{height:9px;border-radius:999px;background:#edf2f7;overflow:hidden;margin-top:8px}
+    .score-bar span{display:block;height:100%;border-radius:999px;background:#2563eb}
+    .score-bar span.warn{background:#b66a00}
+    .score-bar span.danger{background:#d93025}
+    .source-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}
+    .source-card{border:1px solid #dbe3ef;border-radius:8px;background:#fff;padding:10px;min-height:118px}
+    .source-card .name{font-weight:850}
+    .source-card .type{color:#52627c;font-size:12px;margin:3px 0 7px}
+    .window-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+    .window-tabs button{padding:7px 10px}
+    .split-table{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    details.advanced-box{border:1px solid #dbe3ef;border-radius:8px;background:#fbfdff;padding:8px;margin:8px 0}
+    details.advanced-box summary{cursor:pointer;font-weight:850;color:#25324a}
+    .auto-universe-note{border:1px solid #dbe3ef;border-radius:8px;background:#f7fbff;padding:9px;color:#52627c;font-size:12px;line-height:1.45;margin:8px 0}
+    @media (max-width:1100px){header{position:relative}.layout{grid-template-columns:1fr}.grid.kpi,.grid.two,.grid.three,.grid.four,.client-summary,.split-table{grid-template-columns:1fr}aside{position:relative;top:0;height:auto}.kpi-value{font-size:21px}table{min-width:760px}}
   </style>
 </head>
 <body>
@@ -2462,9 +3204,11 @@ HTML = r"""<!doctype html>
 <div class="layout">
   <aside>
     <nav class="side-nav" aria-label="Dashboard sections">
+      <a href="#client-section">Client View <span>Action</span></a>
       <a href="#market-section">Market <span>OHLCV</span></a>
       <a href="#daily-climate-section">Daily Climate <span>Signal</span></a>
-      <a href="#climate-section">Climate <span>Live</span></a>
+      <a href="#climate-data-section">Climate Data <span>Sources</span></a>
+      <a href="#daily-reco-backtest-section">Reco Backtest <span>3W/3M/3Y</span></a>
       <a href="#allocation-section">Allocation <span>ETF</span></a>
       <a href="#backtest-section">Backtest <span>Model</span></a>
       <a href="#optimizer-section">Optimizer <span>Portfolio</span></a>
@@ -2472,7 +3216,7 @@ HTML = r"""<!doctype html>
     </nav>
     <label>Current Data Feeds</label>
     <div class="hint">
-      Prices use live/delayed U.S. stock and ETF data. Climate uses current NWS active alerts plus NASA/NOAA/NCEI inputs.
+      Prices use live/delayed U.S. stock and ETF data. Climate combines NWS, NASA, NOAA/NCEI, and source-ready FEMA/EPA/EIA/NGFS/SEC risk mapping.
     </div>
     <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
     <label>Company Climate VaR Scanner</label>
@@ -2508,11 +3252,18 @@ HTML = r"""<!doctype html>
       </select>
       <input id="optimizerCapital" value="50000000" inputmode="numeric">
     </div>
-    <label>ETF Candidates</label>
-    <textarea id="optimizerEtfs">SPY, QQQ, XLK, XLF, XLU, XLE, ICLN</textarea>
-    <label>Stock Candidates</label>
-    <textarea id="optimizerStocks">AAPL, MSFT, NVDA, JPM, XOM, NEE</textarea>
-    <button onclick="runOptimizer()" style="width:100%">Run Optimizer</button>
+    <div class="auto-universe-note" id="optimizerUniverseNote">
+      Automatic universe is on. The model selects climate-related ETFs and stocks from the daily climate signal, market trend, and sector risk profile.
+    </div>
+    <details class="advanced-box">
+      <summary>Advanced custom universe</summary>
+      <label style="margin-top:8px">ETF override</label>
+      <textarea id="optimizerEtfs" placeholder="Optional: SPY, QQQ, XLK"></textarea>
+      <label>Stock override</label>
+      <textarea id="optimizerStocks" placeholder="Optional: AAPL, MSFT, NVDA"></textarea>
+      <div class="hint">Leave blank to use automatic climate picks.</div>
+    </details>
+    <button onclick="runOptimizer()" style="width:100%">Run Automatic Optimizer</button>
     <div class="hint" style="margin-top:8px">
       Chooses weights, dollar allocation, and estimated shares based on market trend, volatility, liquidity, climate CVOR, and holding period.
     </div>
@@ -2525,6 +3276,23 @@ HTML = r"""<!doctype html>
       <div class="kpi-card"><div class="kpi-label">Top Climate Driver</div><div id="kpiExcess" class="kpi-value">-</div></div>
       <div class="kpi-card"><div class="kpi-label">Climate Data Year</div><div id="kpiDrawdown" class="kpi-value">-</div></div>
       <div class="kpi-card"><div class="kpi-label">Portfolio CVOR 95%</div><div id="kpiCvor" class="kpi-value">-</div></div>
+    </section>
+
+    <section class="panel" id="client-section">
+      <div class="panel-head"><span>Client Climate Intelligence Summary</span><span id="clientSummaryTag">Physical + transition + CVOR</span></div>
+      <div class="panel-body">
+        <div id="clientSummary" class="client-summary"></div>
+        <div class="split-table" style="margin-top:10px">
+          <div>
+            <div class="section-title">Top Affected Holdings</div>
+            <table id="clientAffectedTable"></table>
+          </div>
+          <div>
+            <div class="section-title">Risk Source Attribution</div>
+            <table id="clientSourceTable"></table>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="grid two" id="market-section">
@@ -2593,9 +3361,34 @@ HTML = r"""<!doctype html>
       </div>
     </section>
 
-    <section class="grid two" id="climate-section">
+    <section class="panel" id="daily-reco-backtest-section">
+      <div class="panel-head"><span>Daily Recommended Stock Backtest</span><span id="dailyRecoBacktestTag">3 weeks / 3 months / 3 years</span></div>
+      <div class="panel-body">
+        <div class="window-tabs">
+          <button class="active reco-window-btn" onclick="setRecoBacktestWindow('3w', this)">3W</button>
+          <button class="secondary reco-window-btn" onclick="setRecoBacktestWindow('3m', this)">3M</button>
+          <button class="secondary reco-window-btn" onclick="setRecoBacktestWindow('3y', this)">3Y</button>
+          <button class="secondary" onclick="loadDailyRecommendationBacktest(true)">Refresh</button>
+        </div>
+        <div id="dailyRecoSummary" class="metric-strip" style="margin-bottom:10px"></div>
+        <canvas id="dailyRecoChart" class="backtest-canvas"></canvas>
+        <div class="split-table" style="margin-top:10px">
+          <div>
+            <div class="section-title">Latest Daily Picks</div>
+            <table id="dailyRecoPickTable"></table>
+          </div>
+          <div>
+            <div class="section-title">Recent Walk-Forward Days</div>
+            <table id="dailyRecoYearTable"></table>
+          </div>
+        </div>
+        <div id="dailyRecoNote" class="hint" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <section class="grid two" id="climate-data-section">
       <div class="panel">
-        <div class="panel-head"><span>Current Climate Data</span><span>NWS + NASA/NOAA/NCEI</span></div>
+        <div class="panel-head"><span>Climate Data Center</span><span>NWS + NASA/NOAA/NCEI + source-ready transition data</span></div>
         <div class="panel-body">
           <div id="dailyClimateCards" class="metric-strip" aria-label="Scrollable current climate data cards"></div>
           <div class="data-note" style="margin:10px 0 4px">
@@ -2603,7 +3396,9 @@ HTML = r"""<!doctype html>
             <span class="pill info">Temperature</span>
             <span class="pill info">CO2</span>
             <span class="pill info">Disaster frequency</span>
+            <span class="pill info">Transition data</span>
           </div>
+          <div id="climateSourceGrid" class="source-grid" style="margin:10px 0"></div>
           <table id="climateDataTable"></table>
         </div>
       </div>
@@ -2688,6 +3483,8 @@ let MARKET_INTERVAL = "1d";
 let ACTIVE_TICKER = null;
 let OPTIMIZER = null;
 let DAILY_CLIMATE_BOARD = null;
+let DAILY_RECO_BACKTEST = null;
+let RECO_BACKTEST_WINDOW = "3w";
 let TRADING_CHART = null;
 let CHART_LAYERS = {ma:true, ema:true, vwap:true, bands:false, volume:true, macd:false, dark:false};
 let CANVAS_CHART = {key:null,start:0,end:0,cross:null,drag:false,dragX:0,dragStart:0,dragEnd:0};
@@ -2708,6 +3505,7 @@ async function loadDashboard(){
   await loadMarketChart();
   await loadEtfWatchlist();
   await loadDailyClimateBoard();
+  await loadDailyRecommendationBacktest();
   await runOptimizer();
 }
 
@@ -2736,6 +3534,25 @@ async function loadDailyClimateBoard(){
   const res = await fetch("/api/daily_climate_board");
   DAILY_CLIMATE_BOARD = await res.json();
   renderDailyClimateBoard(DAILY_CLIMATE_BOARD);
+}
+
+async function loadDailyRecommendationBacktest(refresh=false){
+  const res = await fetch("/api/daily_recommendation_backtest" + (refresh ? "?refresh=true" : ""));
+  DAILY_RECO_BACKTEST = await res.json();
+  renderDailyRecommendationBacktest(DAILY_RECO_BACKTEST);
+}
+
+function setRecoBacktestWindow(key, btn){
+  RECO_BACKTEST_WINDOW = key;
+  document.querySelectorAll(".reco-window-btn").forEach(b=>{
+    b.classList.remove("active");
+    b.classList.add("secondary");
+  });
+  if(btn){
+    btn.classList.add("active");
+    btn.classList.remove("secondary");
+  }
+  renderDailyRecommendationBacktest(DAILY_RECO_BACKTEST);
 }
 
 function actionPill(action){
@@ -2789,6 +3606,67 @@ function renderDailyClimateBoard(d){
     </tr>`).join("");
 }
 
+function renderDailyRecommendationBacktest(d){
+  if(!d) return;
+  const active = d.windows && d.windows[RECO_BACKTEST_WINDOW] ? d.windows[RECO_BACKTEST_WINDOW] : null;
+  if(!active) return;
+  const summary = active.summary || {};
+  const rows = active.rows || [];
+  const label = summary.label || RECO_BACKTEST_WINDOW.toUpperCase();
+  const tag = document.getElementById("dailyRecoBacktestTag");
+  if(tag) tag.textContent = `${label} | ${d.source || "market data"} | ${summary.trading_days || 0} trading days`;
+  const summaryEl = document.getElementById("dailyRecoSummary");
+  if(summaryEl){
+    summaryEl.innerHTML = [
+      ["Recommended return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
+      ["Benchmark return", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0)],
+      ["Excess wealth", Number(summary.excess_wealth_ratio || 0).toFixed(3) + "x", clsFor((summary.excess_wealth_ratio || 1) - 1)],
+      ["Annualized", fmtPct(summary.annualized_return || 0), clsFor(summary.annualized_return || 0)],
+      ["Max drawdown", fmtPct(summary.recommended_max_drawdown || 0), "red"],
+      ["Winning days", `${summary.winning_days || 0} / ${summary.trading_days || rows.length}`, "blue"]
+    ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
+  }
+  if(rows.length){
+    drawLineChart(
+      "dailyRecoChart",
+      rows.map(r=>String(r.date).slice(5)),
+      [
+        {name:"Daily recommendation", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
+        {name:"Equal-weight universe", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#64748b"}
+      ]
+    );
+  }
+  const pickTable = document.getElementById("dailyRecoPickTable");
+  if(pickTable){
+    const picks = summary.latest_picks || [];
+    pickTable.innerHTML = `<tr><th>Ticker</th><th>Theme</th><th>Score</th><th>Market</th><th>Climate</th><th>Risk Driver</th></tr>` +
+      picks.map(p=>`<tr>
+        <td><b>${p.ticker}</b><br><span class="hint">${p.name || ""}</span></td>
+        <td>${p.theme || p.sector}<br><span class="hint">${p.stance || "mixed"}</span></td>
+        <td><b>${Number(p.score || 0).toFixed(2)}</b></td>
+        <td>${Number(p.market_score || 0).toFixed(2)}<br><span class="hint">${fmtPct(p.momentum_20d || 0)} 20D</span></td>
+        <td>${Number(p.climate_resilience || 0).toFixed(2)}<br><span class="hint">Transition ${fmtPct(p.transition_risk || 0)}</span></td>
+        <td>${p.driver || "-"}</td>
+      </tr>`).join("");
+  }
+  const dayTable = document.getElementById("dailyRecoYearTable");
+  if(dayTable){
+    dayTable.innerHTML = `<tr><th>Date</th><th>Picks</th><th>Model</th><th>Benchmark</th><th>Excess</th><th>Coverage</th></tr>` +
+      rows.slice(-18).reverse().map(r=>`<tr>
+        <td><b>${r.date}</b><br><span class="hint">signal ${r.signal_date}</span></td>
+        <td>${r.picks}</td>
+        <td class="${clsFor(r.recommended_return)}">${fmtPct(r.recommended_return)}</td>
+        <td class="${clsFor(r.benchmark_return)}">${fmtPct(r.benchmark_return)}</td>
+        <td class="${clsFor(r.return_difference)}"><b>${fmtPct(r.return_difference)}</b></td>
+        <td>${r.coverage}<br><span class="hint">${r.top_drivers || ""}</span></td>
+      </tr>`).join("");
+  }
+  const note = document.getElementById("dailyRecoNote");
+  if(note && d.methodology){
+    note.textContent = `${d.methodology.model} ${d.methodology.selection} ${d.methodology.caveat}`;
+  }
+}
+
 async function runOptimizer(){
   const params = new URLSearchParams({
     mode: document.getElementById("optimizerMode").value,
@@ -2806,16 +3684,21 @@ async function runOptimizer(){
 
 function renderOptimizer(o){
   if(!o) return;
-  document.getElementById("optimizerTag").textContent = `${o.mode_label} | ${o.horizon_label} | ${fmtMoney(o.capital)}`;
+  document.getElementById("optimizerTag").textContent = `${o.universe_mode || "Automatic climate universe"} | ${o.mode_label} | ${o.horizon_label} | ${fmtMoney(o.capital)}`;
+  const universeNote = document.getElementById("optimizerUniverseNote");
+  if(universeNote){
+    universeNote.innerHTML = `<b>${o.universe_mode || "Automatic climate universe"}</b><br>${o.universe_note || ""}<br><span class="hint">ETFs: ${(o.auto_etfs || []).slice(0,6).join(", ")}${(o.auto_etfs || []).length>6?", ...":""}<br>Stocks: ${(o.auto_stocks || []).slice(0,6).join(", ")}${(o.auto_stocks || []).length>6?", ...":""}</span>`;
+  }
   const summary = document.getElementById("optimizerSummary");
   summary.innerHTML = [
     ["Mode", o.mode_label],
+    ["Universe", o.universe_mode || "Automatic"],
     ["Style", o.style_label],
     ["Holding", o.horizon_label],
     ["Climate overlay", fmtPct(o.daily_climate_overlay || 0)]
   ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
   const table = document.getElementById("optimizerTable");
-  table.innerHTML = `<tr><th>Ticker</th><th>Type</th><th>Sector</th><th>Weight</th><th>Capital</th><th>Est. Shares</th><th>Last</th><th>Market</th><th>Climate</th><th>Action</th><th>Why</th></tr>` +
+  table.innerHTML = `<tr><th>Ticker</th><th>Type</th><th>Sector</th><th>Weight</th><th>Capital</th><th>Est. Shares</th><th>Last</th><th>Market</th><th>Physical</th><th>Transition</th><th>Climate</th><th>Action</th><th>Why</th></tr>` +
     (o.rows || []).map(r=>`<tr>
       <td><b>${r.ticker}</b></td>
       <td>${r.asset_type}</td>
@@ -2825,6 +3708,8 @@ function renderOptimizer(o){
       <td>${Number(r.estimated_shares || 0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td>${fmtPrice(r.last)}</td>
       <td>${Number(r.market_score || 0).toFixed(2)}<br><span class="hint">${fmtPct(r.momentum)} move</span></td>
+      <td>${fmtPct(r.physical_risk || 0)}</td>
+      <td>${fmtPct(r.transition_risk || 0)}<br><span class="hint">${r.transition_headline || ""}</span></td>
       <td>${Number(r.climate_score || 0).toFixed(2)}<br><span class="hint">CVOR proxy ${fmtPct(r.cvor_proxy)}</span></td>
       <td><span class="pill ${r.action.includes("Core") || r.action.includes("Add") ? "ok" : (r.action.includes("watch") ? "high" : "info")}">${r.action}</span></td>
       <td>${r.rationale}<br><span class="hint">${o.style_note} ${o.holding_note}</span></td>
@@ -2850,7 +3735,6 @@ function renderMarketQuotes(){
   const intraday = MARKET.interval !== "1d" ? " | refreshed about every 20s" : "";
   document.getElementById("marketSourceTag").textContent = MARKET.source + " | " + MARKET.period + " / " + MARKET.interval + intraday;
   document.getElementById("activeTickerTag").textContent = ACTIVE_TICKER || "-";
-  renderMarketHeatStrip(MARKET.quotes || []);
   const table = document.getElementById("quoteTable");
   table.innerHTML = `<tr><th>Ticker</th><th>Last</th><th>Chg%</th><th>High</th><th>Low</th><th>Volume</th></tr>` +
     MARKET.quotes.map(q=>`<tr onclick="selectChartTicker('${q.ticker}')" style="cursor:pointer">
@@ -2861,16 +3745,62 @@ function renderMarketQuotes(){
     </tr>`).join("");
 }
 
-function renderMarketHeatStrip(quotes){
-  const strip = document.getElementById("marketHeatStrip");
-  if(!strip) return;
-  strip.innerHTML = quotes.map(q=>{
-    const cls = Number(q.change_pct) >= 0 ? "pos" : "neg";
-    return `<div class="heat-cell ${cls}" onclick="selectChartTicker('${q.ticker}')" style="cursor:pointer">
-      <div class="top"><span>${q.ticker}</span><span class="${cls==='pos'?'green':'red'}">${fmtPct(q.change_pct)}</span></div>
-      <div class="sub">${fmtPrice(q.last)} | Vol ${fmtVolume(q.volume)} | ${q.bars} bars</div>
+function scoreClass(score){
+  const n = Number(score || 0);
+  if(n >= 0.66) return "danger";
+  if(n >= 0.44) return "warn";
+  return "";
+}
+
+function renderScoreBar(score){
+  const n = Math.max(0, Math.min(1, Number(score || 0)));
+  return `<div class="score-bar"><span class="${scoreClass(n)}" style="width:${Math.max(3, n*100)}%"></span></div>`;
+}
+
+function renderClientClimateIntelligence(ci){
+  const summary = document.getElementById("clientSummary");
+  if(!summary) return;
+  const riskClass = ci.risk_level === "High" ? "red" : (ci.risk_level === "Elevated" ? "amber" : "green");
+  document.getElementById("clientSummaryTag").textContent = `${ci.risk_level || "Watch"} | Confidence ${fmtPct(ci.confidence || 0)}`;
+  summary.innerHTML = `
+    <div class="client-callout">
+      <div class="title">Client Action</div>
+      <div class="headline ${riskClass}">${ci.risk_level || "Watch"}</div>
+      <div>${ci.client_action || "-"}</div>
+      ${renderScoreBar(ci.total_score || 0)}
+      <div class="hint" style="margin-top:8px">${ci.headline || ""}</div>
+    </div>
+    <div class="grid two">
+      <div class="signal-card"><div class="label">Physical risk</div><div class="value ${clsFor((ci.physical_score || 0) - .44)}">${fmtPct(ci.physical_score || 0)}</div>${renderScoreBar(ci.physical_score || 0)}</div>
+      <div class="signal-card"><div class="label">Transition risk</div><div class="value ${clsFor((ci.transition_score || 0) - .44)}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}</div>
+      <div class="signal-card"><div class="label">CVOR contribution</div><div class="value amber">${fmtPct(ci.cvor_score || 0)}</div>${renderScoreBar(ci.cvor_score || 0)}</div>
+      <div class="signal-card"><div class="label">Data confidence</div><div class="value blue">${fmtPct(ci.confidence || 0)}</div>${renderScoreBar(ci.confidence || 0)}</div>
     </div>`;
-  }).join("");
+  const affected = document.getElementById("clientAffectedTable");
+  if(affected){
+    const rows = ci.top_affected || [];
+    affected.innerHTML = `<tr><th>Holding</th><th>Sector</th><th>Weight</th><th>Physical</th><th>Transition</th><th>Action</th><th>Driver</th></tr>` +
+      rows.map(r=>`<tr>
+        <td><b>${r.ticker}</b></td>
+        <td>${r.sector}</td>
+        <td>${fmtPct(r.weight)}</td>
+        <td>${fmtPct(r.physical_risk)}</td>
+        <td>${fmtPct(r.transition_risk)}</td>
+        <td><span class="pill ${r.action.includes("Hedge") ? "high" : (r.action.includes("Watch") ? "info" : "ok")}">${r.action}</span></td>
+        <td>${r.driver || "-"}</td>
+      </tr>`).join("");
+  }
+  const sourceTable = document.getElementById("clientSourceTable");
+  if(sourceTable){
+    const rows = (ci.source_rows || []).slice(0, 8);
+    sourceTable.innerHTML = `<tr><th>Source</th><th>Risk Type</th><th>Status</th><th>Model Use</th></tr>` +
+      rows.map(r=>`<tr>
+        <td><b>${r.name}</b></td>
+        <td>${r.risk_type}</td>
+        <td><span class="pill ${String(r.model_mode || "").includes("input") ? "ok" : "info"}">${r.status}</span></td>
+        <td>${r.client_use}</td>
+      </tr>`).join("");
+  }
 }
 
 function renderDashboard(d){
@@ -2890,6 +3820,7 @@ function renderDashboard(d){
   document.getElementById("kpiDrawdown").className = "kpi-value blue";
   document.getElementById("kpiCvor").textContent = fmtPct(d.cvor_summary.cvor_95_loss_rate);
   document.getElementById("kpiCvor").className = "kpi-value amber";
+  renderClientClimateIntelligence(d.climate_intelligence || {});
   renderAllocation(d.latest_allocation);
   renderScenarios(d.scenario_rows);
   renderClimateData(d);
@@ -2908,9 +3839,19 @@ function renderDashboard(d){
 
 function renderClimateData(d){
   const c = d.climate_data_context;
+  const ci = d.climate_intelligence || {};
   const sources = d.official_climate_sources || {};
   const notes = (d.official_climate_notes || []).join("; ");
   const latestRows = (d.official_climate_rows || []).slice(-5).reverse();
+  const sourceGrid = document.getElementById("climateSourceGrid");
+  if(sourceGrid){
+    sourceGrid.innerHTML = (d.climate_data_sources || []).map(r=>`<div class="source-card">
+      <div class="name">${r.name}</div>
+      <div class="type">${r.risk_type}</div>
+      <span class="pill ${String(r.model_mode || "").includes("input") ? "ok" : "info"}">${r.model_mode || r.status}</span>
+      <div class="hint" style="margin-top:7px">${r.client_use}</div>
+    </div>`).join("");
+  }
   const table = document.getElementById("climateDataTable");
   const summary = [
     ["Climate data year", c.latest_year],
@@ -2919,6 +3860,9 @@ function renderClimateData(d){
     ["10Y CO2 change", `${Number(c.co2_10y_change).toFixed(2)} ppm`],
     ["10Y disaster frequency", `${Number(c.disaster_10y_avg).toFixed(2)} / year`],
     ["Pressure multiplier", Number(c.climate_pressure_multiplier).toFixed(3)],
+    ["Acute physical score", fmtPct(ci.acute_physical_score || 0)],
+    ["Chronic physical score", fmtPct(ci.chronic_physical_score || 0)],
+    ["Transition score", fmtPct(ci.transition_score || 0)],
     ["Source mode", c.source_mode],
     ["Source notes", notes],
   ];
@@ -2936,6 +3880,7 @@ function renderClimateData(d){
 
 function renderDailyClimateSignal(d){
   const s = d.daily_climate_signal || {};
+  const ci = d.climate_intelligence || {};
   const cards = document.getElementById("dailyClimateCards");
   const top = s.top_driver || "none";
   const source = s.source_mode || "-";
@@ -2943,7 +3888,9 @@ function renderDailyClimateSignal(d){
     ["Climate alerts", Number(s.climate_alerts || 0).toLocaleString()],
     ["Daily pressure", fmtPct(s.daily_pressure || 0)],
     ["Allocation overlay", fmtPct(s.allocation_pressure || 0)],
-    ["Top driver", top.replace("_"," ")]
+    ["Top driver", top.replace("_"," ")],
+    ["Physical risk", fmtPct(ci.physical_score || 0)],
+    ["Transition risk", fmtPct(ci.transition_score || 0)]
   ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
   const rows = d.latest_allocation || [];
   const table = document.getElementById("dailyImpactTable");
@@ -3059,23 +4006,6 @@ function renderBacktest(d){
   if(note) note.textContent = method.caveat || "Research prototype backtest.";
 }
 
-function renderMethod2(m){
-  const table = document.getElementById("method2Table");
-  const rows = [
-    ["Paper", m.paper],
-    ["Core equation", m.equation],
-    ["Company-level implementation", m.implementation],
-    ["Damage function", m.damage_function],
-    ["Monte Carlo draws per issuer", m.draws],
-    ["Base private discount rate", fmtPct(m.discount_rate)],
-    ["Horizon", `Current year to ${m.horizon}`],
-    ["Scenario comparison", m.scenario_comparison],
-    ["Climate data upgrade", m.climate_data_upgrade],
-  ];
-  table.innerHTML = `<tr><th>Method 2 Component</th><th>Platform Implementation</th></tr>` +
-    rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td></tr>`).join("");
-}
-
 function renderScenarios(rows){
   const table = document.getElementById("scenarioTable");
   table.innerHTML = `<tr><th>Scenario</th><th>Probability</th><th>Carbon Price</th><th>Portfolio Loss</th><th>Loss Dollars</th><th>Largest Sector Loss</th><th>Narrative</th></tr>` +
@@ -3088,54 +4018,6 @@ function renderScenarios(rows){
         <td>${top}</td><td>${r.narrative}</td>
       </tr>`;
     }).join("");
-}
-
-async function searchUniverse(){
-  const query = document.getElementById("universeInput").value;
-  const res = await fetch("/api/universe_search?query="+encodeURIComponent(query)+"&limit=80");
-  const rows = await res.json();
-  const table = document.getElementById("universeTable");
-  table.innerHTML = `<tr><th>Ticker</th><th>Name</th><th>Exchange</th><th>Type</th><th>Action</th></tr>` +
-    rows.map(r=>`<tr>
-      <td><b>${r.symbol}</b></td><td>${r.name}</td><td>${r.exchange}</td><td>${r.security_type}</td>
-      <td><button class="secondary" onclick="addTicker('${r.symbol}')">Add</button></td>
-    </tr>`).join("");
-}
-
-function addTicker(symbol){
-  const input = document.getElementById("tickerInput");
-  const existing = input.value.split(",").map(x=>x.trim().toUpperCase()).filter(Boolean);
-  if(!existing.includes(symbol)) existing.unshift(symbol);
-  input.value = existing.join(", ");
-}
-
-function renderRisk(s){
-  const table = document.getElementById("riskTable");
-  const rows = [
-    ["Climate-aware total return", fmtPct(s.climate_total_return), clsFor(s.climate_total_return)],
-    ["Benchmark total return", fmtPct(s.benchmark_total_return), clsFor(s.benchmark_total_return)],
-    ["Excess wealth multiple", Number(s.excess_return).toFixed(3)+"x", clsFor(s.excess_return)],
-    ["Climate-aware max drawdown", fmtPct(s.climate_max_drawdown), "red"],
-    ["Benchmark max drawdown", fmtPct(s.benchmark_max_drawdown), "red"],
-    ["Sharpe proxy", s.annual_sharpe_proxy, s.annual_sharpe_proxy>=0 ? "green" : "red"],
-    ["Winning years", `${s.winning_years} / ${s.years_tested}`, "blue"],
-  ];
-  table.innerHTML = `<tr><th>Metric</th><th>Value</th></tr>` + rows.map(r=>`<tr><td>${r[0]}</td><td class="${r[2]}"><b>${r[1]}</b></td></tr>`).join("");
-}
-
-function renderLog(d){
-  const latest = d.latest_allocation;
-  const lines = [
-    `[${d.generated_at}] Platform loaded for Jenneson climate-finance prototype.`,
-    `Methodology: ${d.methodology}.`,
-    `Regime: ${d.latest_regime.regime}; signal year ${d.latest_regime.signal_year}; score ${Number(d.latest_regime.score).toFixed(2)}.`,
-    `Market data: ${d.market_source}.`,
-    `Allocation engine produced ${latest.length} ETF actions for a ${fmtMoney(d.portfolio_value)} mock portfolio.`,
-    `Portfolio CVOR 95: ${fmtPct(d.cvor_summary.cvor_95_loss_rate)} or ${fmtMoney(d.cvor_summary.cvor_95_loss_dollars)} under adverse climate scenarios.`,
-    `U.S. system: ${d.us_market_notes[0]}`,
-    `Client framing: simplified Climate VaR prototype, not a full issuer-level scenario model.`
-  ];
-  document.getElementById("modelLog").textContent = lines.join("\n");
 }
 
 async function scanCompanies(){
@@ -3870,6 +4752,7 @@ loadDashboard();
 setInterval(()=>{ loadMarketChart(); }, 20000);
 setInterval(()=>{ loadEtfWatchlist(); }, 60000);
 setInterval(()=>{ loadDailyClimateBoard(); }, 300000);
+setInterval(()=>{ loadDailyRecommendationBacktest(); }, 3600000);
 setInterval(()=>{ loadDashboard(); }, 900000);
 </script>
 </body>
@@ -3905,6 +4788,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/dashboard":
             self._send_json(build_payload())
             return
+        if parsed.path == "/api/climate_intelligence":
+            self._send_json(climate_intelligence_payload())
+            return
         if parsed.path == "/api/company_scan":
             q = parse_qs(parsed.query)
             tickers = ",".join(q.get("tickers", ["AAPL,MSFT,XOM,NEE,JPM"]))
@@ -3928,15 +4814,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(etf_watchlist_payload())
             return
         if parsed.path == "/api/portfolio_optimizer":
-            q = parse_qs(parsed.query)
+            q = parse_qs(parsed.query, keep_blank_values=True)
             self._send_json(
                 portfolio_optimizer_payload(
                     mode=q.get("mode", ["etf_stock"])[0],
                     capital=q.get("capital", [str(DEFAULT_PORTFOLIO_VALUE)])[0],
                     horizon=q.get("horizon", ["long"])[0],
                     style=q.get("style", ["balanced"])[0],
-                    etfs=q.get("etfs", [",".join(DEFAULT_OPTIMIZER_ETFS)])[0],
-                    stocks=q.get("stocks", [",".join(DEFAULT_OPTIMIZER_STOCKS)])[0],
+                    etfs=q.get("etfs", [""])[0],
+                    stocks=q.get("stocks", [""])[0],
                 )
             )
             return
@@ -3945,6 +4831,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/daily_climate_signal":
             self._send_json(load_daily_climate_signal())
+            return
+        if parsed.path == "/api/daily_recommendation_backtest":
+            q = parse_qs(parsed.query)
+            refresh = q.get("refresh", ["false"])[0].lower() in ["1", "true", "yes"]
+            self._send_json(daily_recommendation_backtest_payload(force_refresh=refresh))
             return
         self._send_json({"error": "Not found"}, status=404)
 
