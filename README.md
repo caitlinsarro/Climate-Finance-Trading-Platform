@@ -9,9 +9,7 @@ English U.S.-listed climate-finance research cockpit inspired by the earlier Chi
 - Daily climate-alert overlay that moves current ETF allocation from NWS active weather alerts
 - Climate signal from temperature anomaly and weather disaster frequency proxies
 - Dedicated Climate Data Center with live, official, and source-ready physical/transition data inputs
-- Recommended portfolio backtest using the final optimizer weights
-- Daily recommended stock walk-forward backtest over 3 weeks, 3 months, and 3 years
-- Visible backtest dashboard with equity curve, risk metrics, annual results, and methodology notes
+- Automatic daily stock picker walk-forward backtest over 3 weeks, 3 months, and 3 years
 - Portfolio CVOR scenario matrix
 - Company-level issuer scanner for market CVaR and climate value-at-risk components
 - U.S. listed company search from NasdaqTrader listings
@@ -77,9 +75,7 @@ By default, the optimizer uses an automatic climate universe. It ranks climate-r
 
 For each asset, the optimizer estimates a score from market behavior, physical climate risk, transition risk, Method 2/CVOR proxy, and volatility, then converts it into a portfolio weight. It multiplies the weight by the selected capital amount to show target dollars and estimated shares.
 
-The backtest section now uses those final optimizer weights as the model portfolio and compares them with an equal-weight basket of the same selected assets. This makes the backtest match the actual recommendation shown by the system. It is a current-recommendation backtest, not a pure historical walk-forward test, because today's weights are applied backward through history.
-
-The daily recommended stock backtest is a separate walk-forward test. Each signal day selects the top five stocks using prior market trend, volatility, annual climate pressure, and sector physical/transition risk, then compares next-day performance with the equal-weight recommendation universe over 3-week, 3-month, and 3-year windows.
+The automatic daily stock picker backtest is a separate walk-forward test. Each signal day selects the top five stocks using prior market trend, volatility, annual climate pressure, and sector physical/transition risk, then compares next-day performance with the equal-weight recommendation universe over 3-week, 3-month, and 3-year windows. Optimizer capital and horizon controls affect the optimizer output; this daily picker evidence stays capital-independent.
 
 ## Climate Data Sources
 
