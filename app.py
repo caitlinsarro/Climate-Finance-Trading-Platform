@@ -2707,6 +2707,35 @@ def score_daily_recommendation(symbol, prices, dates, idx, climate_rows):
     }
 
 
+def walk_forward_adjusted_score(score, style="balanced", horizon="long"):
+    style = optimizer_style(style)
+    horizon = optimizer_horizon(horizon)
+    weights = {
+        "balanced": (0.42, 0.36, 0.22),
+        "climate_defense": (0.22, 0.56, 0.22),
+        "growth": (0.58, 0.22, 0.20),
+        "low_vol": (0.26, 0.30, 0.44),
+    }.get(style, (0.42, 0.36, 0.22))
+    market_w, climate_w, risk_w = weights
+    if horizon == "short":
+        market_w += 0.10
+        climate_w -= 0.05
+        risk_w -= 0.05
+    else:
+        market_w -= 0.03
+        climate_w += 0.05
+        risk_w -= 0.02
+    total = market_w + climate_w + risk_w
+    market_w, climate_w, risk_w = market_w / total, climate_w / total, risk_w / total
+    return clamp(
+        market_w * safe_float(score.get("market_score"), 0.50)
+        + climate_w * safe_float(score.get("climate_resilience"), 0.50)
+        + risk_w * safe_float(score.get("risk_score"), 0.50),
+        0.01,
+        0.99,
+    )
+
+
 def build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_n=5):
     date_sets = [set(p.keys()) for p in prices.values() if p]
     if not date_sets:
@@ -2753,6 +2782,83 @@ def build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_
                 "picks": ", ".join(pick_symbols),
                 "top_drivers": "; ".join(p["driver"] for p in picks[:3]),
                 "pick_details": picks,
+                "coverage": f"{len(available)} / {len(symbols)}",
+            }
+        )
+    return rows
+
+
+def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, style="balanced", horizon="long", top_n=None):
+    symbols = [yahoo_symbol(s) for s in symbols if yahoo_symbol(s)]
+    date_sets = [set(prices.get(symbol, {}).keys()) for symbol in symbols if prices.get(symbol)]
+    if not date_sets:
+        return []
+    common_dates = sorted(set.intersection(*date_sets)) if len(date_sets) == len(symbols) else []
+    all_dates = sorted(set.union(*date_sets))
+    dates = common_dates if len(common_dates) >= 120 else all_dates
+    rows = []
+    for idx in range(25, len(dates) - 1):
+        scored = []
+        available = []
+        next_returns = {}
+        for symbol in symbols:
+            price_map = prices.get(symbol, {})
+            current = price_map.get(dates[idx])
+            nxt = price_map.get(dates[idx + 1])
+            if not current or not nxt:
+                continue
+            score = score_daily_recommendation(symbol, prices, dates, idx, climate_rows)
+            if not score:
+                continue
+            adjusted = walk_forward_adjusted_score(score, style=style, horizon=horizon)
+            score["score"] = round(adjusted, 4)
+            score["signal_strength"] = round(abs(adjusted - 0.50) * 2, 4)
+            scored.append(score)
+            available.append(symbol)
+            next_returns[symbol] = nxt / current - 1
+        if len(scored) < 4:
+            continue
+        scored = sorted(scored, key=lambda r: r["score"], reverse=True)
+        bucket = top_n or max(2, min(5, round(len(scored) * 0.28)))
+        buy_count = min(bucket, max(1, len(scored) // 2))
+        sell_count = min(bucket, max(1, len(scored) - buy_count))
+        buys = scored[:buy_count]
+        sells = list(reversed(scored[-sell_count:]))
+        buy_symbols = [p["ticker"] for p in buys]
+        sell_symbols = [p["ticker"] for p in sells]
+        buy_returns = [next_returns[s] for s in buy_symbols if s in next_returns]
+        sell_returns = [next_returns[s] for s in sell_symbols if s in next_returns]
+        bench_returns = [next_returns[s] for s in available if s in next_returns]
+        if not buy_returns or not sell_returns or not bench_returns:
+            continue
+        long_book = sum(buy_returns) / len(buy_returns)
+        sell_book = sum(sell_returns) / len(sell_returns)
+        signal_return = 0.50 * long_book - 0.50 * sell_book
+        benchmark_return = sum(bench_returns) / len(bench_returns)
+        pick_details = []
+        for item in buys:
+            detail = dict(item)
+            detail["stance"] = "Buy"
+            detail["driver"] = f"BUY: {item.get('driver', '')}"
+            pick_details.append(detail)
+        for item in sells:
+            detail = dict(item)
+            detail["stance"] = "Sell / short"
+            detail["driver"] = f"SELL: low score, weak relative market/climate/risk mix. {item.get('driver', '')}"
+            pick_details.append(detail)
+        rows.append(
+            {
+                "date": dates[idx + 1],
+                "signal_date": dates[idx],
+                "recommended_return": round(signal_return, 5),
+                "benchmark_return": round(benchmark_return, 5),
+                "return_difference": round(signal_return - benchmark_return, 5),
+                "long_book_return": round(long_book, 5),
+                "sell_book_return": round(sell_book, 5),
+                "picks": ", ".join(buy_symbols),
+                "sells": ", ".join(sell_symbols),
+                "top_drivers": f"Buy {', '.join(buy_symbols[:3])}; Sell {', '.join(sell_symbols[:3])}",
+                "pick_details": pick_details,
                 "coverage": f"{len(available)} / {len(symbols)}",
             }
         )
@@ -2905,7 +3011,14 @@ def daily_recommendation_backtest_payload(
         selected_rows = optimizer.get("rows", [])
         symbols = [r["ticker"] for r in selected_rows if r.get("ticker")]
         prices, source = fetch_daily_close_history(symbols, period="3y")
-        rows = build_portfolio_selection_backtest_rows(selected_rows, prices)
+        climate_rows = climate_signal()
+        rows = build_walk_forward_buy_sell_backtest_rows(
+            symbols,
+            prices,
+            climate_rows,
+            style=style or "balanced",
+            horizon=horizon or "long",
+        )
         windows = {
             "3w": summarize_daily_recommendation_window(rows, 15, "3 weeks"),
             "3m": summarize_daily_recommendation_window(rows, 63, "3 months"),
@@ -2915,7 +3028,7 @@ def daily_recommendation_backtest_payload(
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "source": source,
             "universe": symbols,
-            "backtest_type": "portfolio_selection",
+            "backtest_type": "walk_forward_buy_sell",
             "portfolio_context": {
                 "mode": optimizer.get("mode"),
                 "mode_label": optimizer.get("mode_label"),
@@ -2929,10 +3042,10 @@ def daily_recommendation_backtest_payload(
                 "selected_tickers": symbols,
             },
             "methodology": {
-                "model": "Portfolio-selected holdings backtest using the current optimizer tickers and target weights.",
-                "selection": "The model line applies the optimizer target weights to all selected holdings. The benchmark is an equal-weight basket of the same selected holdings.",
-                "windows": "3 weeks, 3 months, and 3 years are recalculated from daily portfolio returns.",
-                "caveat": "This is a current-selection historical diagnostic; it does not rebalance the optimizer historically or include taxes, slippage, transaction costs, or execution constraints.",
+                "model": "Daily walk-forward buy/sell signal backtest using the current optimizer universe.",
+                "selection": "For each historical signal date, the model scores only information available up to that date, buys the top bucket, and sells/shorts the bottom bucket for the next trading day.",
+                "windows": "3 weeks, 3 months, and 3 years are recalculated from daily signal returns; the current portfolio is not used retroactively.",
+                "caveat": "This is a signal validation backtest before transaction costs, borrow costs, slippage, taxes, and execution constraints.",
             },
             "windows": windows,
         }
@@ -3480,7 +3593,7 @@ HTML = r"""<!doctype html>
     </section>
 
     <section class="panel" id="daily-reco-backtest-section">
-      <div class="panel-head"><span>Portfolio Selection Backtest</span><span id="dailyRecoBacktestTag">3W / 3M / 3Y walk-forward</span></div>
+      <div class="panel-head"><span>Daily Buy/Sell Walk-Forward Backtest</span><span id="dailyRecoBacktestTag">3W / 3M / 3Y walk-forward</span></div>
       <div class="panel-body">
         <div class="window-tabs">
           <button class="active reco-window-btn" onclick="setRecoBacktestWindow('3w', this)">3W</button>
@@ -3492,7 +3605,7 @@ HTML = r"""<!doctype html>
         <canvas id="dailyRecoChart" class="backtest-canvas"></canvas>
         <div class="split-table" style="margin-top:10px">
           <div>
-            <div class="section-title">Current Portfolio Picks</div>
+            <div class="section-title">Latest Historical Buy / Sell Signals</div>
             <table id="dailyRecoPickTable"></table>
           </div>
           <div>
@@ -3728,15 +3841,15 @@ function renderDailyRecommendationBacktest(d){
   const label = summary.label || RECO_BACKTEST_WINDOW.toUpperCase();
   const context = d.portfolio_context || {};
   const tag = document.getElementById("dailyRecoBacktestTag");
-  if(tag) tag.textContent = `${label} | ${context.mode_label || "Portfolio"} | ${context.horizon_label || "current optimizer"} | ${summary.trading_days || 0} trading days`;
+  if(tag) tag.textContent = `${label} | daily buy/sell signals | ${context.mode_label || "Portfolio universe"} | ${summary.trading_days || 0} trading days`;
   const summaryEl = document.getElementById("dailyRecoSummary");
   if(summaryEl){
     summaryEl.innerHTML = [
-      ["Portfolio return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
-      ["Equal-weight same picks", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0)],
-      ["Portfolio / equal-weight", Number(summary.excess_wealth_ratio || 0).toFixed(3) + "x", clsFor((summary.excess_wealth_ratio || 1) - 1)],
-      ["Annualized portfolio", fmtPct(summary.annualized_return || 0), clsFor(summary.annualized_return || 0)],
-      ["Portfolio drawdown", fmtPct(summary.recommended_max_drawdown || 0), "red"],
+      ["Buy/Sell signal return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
+      ["Universe benchmark", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0)],
+      ["Signal / benchmark", Number(summary.excess_wealth_ratio || 0).toFixed(3) + "x", clsFor((summary.excess_wealth_ratio || 1) - 1)],
+      ["Annualized signal", fmtPct(summary.annualized_return || 0), clsFor(summary.annualized_return || 0)],
+      ["Signal drawdown", fmtPct(summary.recommended_max_drawdown || 0), "red"],
       ["Winning trading days", `${summary.winning_days || 0} / ${summary.trading_days || rows.length}`, "blue"]
     ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
   }
@@ -3745,34 +3858,35 @@ function renderDailyRecommendationBacktest(d){
       "dailyRecoChart",
       rows.map(r=>String(r.date).slice(5)),
       [
-        {name:"Optimizer-weighted portfolio", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
-        {name:"Equal-weight same picks", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#64748b"}
+        {name:"Daily buy/sell signal", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
+        {name:"Equal-weight universe", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#64748b"}
       ]
     );
   }
   const pickTable = document.getElementById("dailyRecoPickTable");
   if(pickTable){
     const picks = summary.latest_picks || [];
-    pickTable.innerHTML = `<tr><th>Ticker</th><th>Type</th><th>Portfolio Weight</th><th>Action</th><th>Sector</th><th>Optimizer Driver</th></tr>` +
+    pickTable.innerHTML = `<tr><th>Ticker</th><th>Signal</th><th>Score</th><th>Market</th><th>Climate</th><th>Driver</th></tr>` +
       picks.map(p=>`<tr>
         <td><b>${p.ticker}</b><br><span class="hint">${p.name || ""}</span></td>
-        <td>${p.theme || "-"}</td>
-        <td><b>${fmtPct(p.score || 0)}</b></td>
-        <td><span class="pill ${actionPill(p.stance)}">${p.stance || "-"}</span></td>
-        <td>${p.sector || "-"}</td>
+        <td><span class="pill ${String(p.stance || "").includes("Sell") ? "high" : "ok"}">${p.stance || "-"}</span><br><span class="hint">${p.theme || p.sector || ""}</span></td>
+        <td><b>${Number(p.score || 0).toFixed(2)}</b></td>
+        <td>${Number(p.market_score || 0).toFixed(2)}<br><span class="hint">${fmtPct(p.momentum_20d || 0)} 20D</span></td>
+        <td>${Number(p.climate_resilience || 0).toFixed(2)}<br><span class="hint">Transition ${fmtPct(p.transition_risk || 0)}</span></td>
         <td>${p.driver || "-"}</td>
       </tr>`).join("");
   }
   const dayTable = document.getElementById("dailyRecoYearTable");
   if(dayTable){
-    dayTable.innerHTML = `<tr><th>Date</th><th>Portfolio Holdings</th><th>Portfolio</th><th>Equal-weight</th><th>Excess</th><th>Coverage</th></tr>` +
+    dayTable.innerHTML = `<tr><th>Date</th><th>Buy Signals</th><th>Sell Signals</th><th>Signal</th><th>Benchmark</th><th>Excess</th><th>Coverage</th></tr>` +
       rows.slice(-18).reverse().map(r=>`<tr>
         <td><b>${r.date}</b><br><span class="hint">signal ${r.signal_date}</span></td>
         <td>${r.picks}</td>
+        <td>${r.sells || "-"}</td>
         <td class="${clsFor(r.recommended_return)}">${fmtPct(r.recommended_return)}</td>
         <td class="${clsFor(r.benchmark_return)}">${fmtPct(r.benchmark_return)}</td>
         <td class="${clsFor(r.return_difference)}"><b>${fmtPct(r.return_difference)}</b></td>
-        <td>${r.coverage}<br><span class="hint">${r.top_drivers || ""}</span></td>
+        <td>${r.coverage}<br><span class="hint">Long ${fmtPct(r.long_book_return || 0)} | Sell book ${fmtPct(r.sell_book_return || 0)}</span></td>
       </tr>`).join("");
   }
   const note = document.getElementById("dailyRecoNote");
