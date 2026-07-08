@@ -2569,10 +2569,24 @@ def daily_stock_meta(symbol):
     for item in DAILY_CLIMATE_STOCKS:
         if yahoo_symbol(item.get("ticker")) == symbol:
             return item
+    for item in DAILY_CLIMATE_ETFS:
+        if yahoo_symbol(item.get("ticker")) == symbol:
+            sector, climate_risk, note = etf_climate_profile(symbol)
+            return {
+                "ticker": symbol,
+                "name": symbol,
+                "theme": item.get("role", sector),
+                "sector": sector,
+                "stance": item.get("stance", "mixed"),
+                "exposure": item.get("exposure", {}),
+                "climate_risk": climate_risk,
+                "note": note,
+            }
     return {
         "ticker": symbol,
         "name": symbol,
         "theme": guess_sector(symbol),
+        "sector": guess_sector(symbol),
         "stance": "mixed",
         "exposure": {},
         "note": "Fallback issuer profile from sector and market data.",
@@ -2672,23 +2686,43 @@ def score_daily_recommendation(symbol, prices, dates, idx, climate_rows):
     market_score = clamp(0.52 + 1.35 * momentum + 0.20 * mean, 0.02, 0.98)
     risk_score = clamp(1 - vol / 0.035, 0.02, 0.98)
     meta = daily_stock_meta(symbol)
-    sector = guess_sector(symbol)
+    sector = meta.get("sector") or guess_sector(symbol)
     transition = sector_transition_profile(sector)
     climate_pressure = historical_climate_pressure_for_year(int(dates[idx][:4]), climate_rows)
     physical_sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, 0.50)
     relation = sum(safe_float(v, 0.0) for v in (meta.get("exposure") or {}).values()) / max(1, len(meta.get("exposure") or {}))
     stance = meta.get("stance", "mixed")
-    beneficiary = 0.12 if stance == "beneficiary" else (0.05 if stance == "hedge" else 0.0)
+    opportunity = safe_float(transition.get("opportunity"), 0.40)
+    transition_risk = safe_float(transition.get("risk"), 0.50)
+    event_beta = clamp(relation * climate_pressure, 0.0, 1.0)
+    stance_bias = {"beneficiary": 0.18, "hedge": 0.11, "mixed": 0.02, "risk": -0.20}.get(stance, 0.0)
+    if stance == "beneficiary":
+        climate_alpha = 0.52 + stance_bias + 0.34 * event_beta + 0.18 * opportunity - 0.12 * transition_risk
+    elif stance == "hedge":
+        climate_alpha = 0.50 + stance_bias + 0.24 * event_beta + 0.08 * risk_score - 0.08 * transition_risk
+    elif stance == "risk":
+        climate_alpha = 0.50 + stance_bias - 0.32 * event_beta - 0.18 * transition_risk - 0.10 * physical_sensitivity * climate_pressure
+    else:
+        climate_alpha = 0.50 + stance_bias + 0.10 * event_beta + 0.12 * opportunity - 0.12 * transition_risk - 0.06 * physical_sensitivity * climate_pressure
     climate_resilience = clamp(
-        1
-        - 0.48 * physical_sensitivity * climate_pressure
-        - 0.42 * safe_float(transition.get("risk"), 0.50)
-        + 0.18 * beneficiary
-        + 0.05 * relation,
+        climate_alpha
+        + 0.12 * risk_score
+        + 0.06 * market_score
+        - 0.10 * max(0.0, -momentum),
         0.03,
         0.97,
     )
-    total_score = clamp(0.44 * market_score + 0.34 * climate_resilience + 0.22 * risk_score, 0.01, 0.99)
+    sell_score = clamp(
+        (0.55 if stance == "risk" else 0.22 if stance == "mixed" else 0.04)
+        + 0.32 * event_beta
+        + 0.22 * transition_risk
+        + 0.12 * physical_sensitivity * climate_pressure
+        - 0.18 * opportunity
+        - 0.10 * market_score,
+        0.01,
+        0.99,
+    )
+    total_score = clamp(0.64 * climate_resilience + 0.24 * market_score + 0.12 * risk_score, 0.01, 0.99)
     return {
         "ticker": symbol,
         "name": meta.get("name", symbol),
@@ -2698,12 +2732,14 @@ def score_daily_recommendation(symbol, prices, dates, idx, climate_rows):
         "score": round(total_score, 4),
         "market_score": round(market_score, 4),
         "climate_resilience": round(climate_resilience, 4),
+        "climate_signal_score": round(total_score, 4),
+        "sell_score": round(sell_score, 4),
         "risk_score": round(risk_score, 4),
         "momentum_20d": round(momentum, 5),
         "volatility_20d": round(vol, 5),
         "physical_pressure": round(physical_sensitivity * climate_pressure, 4),
         "transition_risk": transition["risk"],
-        "driver": f"{meta.get('theme', sector)}; market {market_score:.0%}, climate resilience {climate_resilience:.0%}.",
+        "driver": f"{meta.get('theme', sector)}; climate signal {total_score:.0%}, market {market_score:.0%}, resilience {climate_resilience:.0%}.",
     }
 
 
@@ -2823,7 +2859,10 @@ def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, sty
         buy_count = min(bucket, max(1, len(scored) // 2))
         sell_count = min(bucket, max(1, len(scored) - buy_count))
         buys = scored[:buy_count]
-        sells = list(reversed(scored[-sell_count:]))
+        buy_set = {p["ticker"] for p in buys}
+        sell_pool = [p for p in scored if p["ticker"] not in buy_set and p.get("stance") != "beneficiary"]
+        sell_pool = sorted(sell_pool or [p for p in scored if p["ticker"] not in buy_set], key=lambda r: r.get("sell_score", 0.0), reverse=True)
+        sells = sell_pool[:sell_count]
         buy_symbols = [p["ticker"] for p in buys]
         sell_symbols = [p["ticker"] for p in sells]
         buy_returns = [next_returns[s] for s in buy_symbols if s in next_returns]
@@ -2833,8 +2872,8 @@ def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, sty
             continue
         long_book = sum(buy_returns) / len(buy_returns)
         sell_book = sum(sell_returns) / len(sell_returns)
-        signal_return = 0.50 * long_book - 0.50 * sell_book
         benchmark_return = sum(bench_returns) / len(bench_returns)
+        signal_return = long_book - 0.25 * sell_book
         pick_details = []
         for item in buys:
             detail = dict(item)
@@ -2843,8 +2882,8 @@ def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, sty
             pick_details.append(detail)
         for item in sells:
             detail = dict(item)
-            detail["stance"] = "Sell / short"
-            detail["driver"] = f"SELL: low score, weak relative market/climate/risk mix. {item.get('driver', '')}"
+            detail["stance"] = "Sell / underweight"
+            detail["driver"] = f"SELL: climate vulnerability score {item.get('sell_score', 0):.0%}; {item.get('driver', '')}"
             pick_details.append(detail)
         rows.append(
             {
@@ -3028,7 +3067,7 @@ def daily_recommendation_backtest_payload(
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "source": source,
             "universe": symbols,
-            "backtest_type": "walk_forward_buy_sell",
+            "backtest_type": "climate_walk_forward_buy_sell",
             "portfolio_context": {
                 "mode": optimizer.get("mode"),
                 "mode_label": optimizer.get("mode_label"),
@@ -3042,10 +3081,10 @@ def daily_recommendation_backtest_payload(
                 "selected_tickers": symbols,
             },
             "methodology": {
-                "model": "Daily walk-forward buy/sell signal backtest using the current optimizer universe.",
-                "selection": "For each historical signal date, the model scores only information available up to that date, buys the top bucket, and sells/shorts the bottom bucket for the next trading day.",
+                "model": "Daily walk-forward climate buy/sell overlay using the current optimizer universe.",
+                "selection": "For each historical signal date, the model scores only information available up to that date, buys the strongest climate-beneficiary/resilience bucket, and underweights or shorts the highest climate-vulnerability bucket for the next trading day.",
                 "windows": "3 weeks, 3 months, and 3 years are recalculated from daily signal returns; the current portfolio is not used retroactively.",
-                "caveat": "This is a signal validation backtest before transaction costs, borrow costs, slippage, taxes, and execution constraints.",
+                "caveat": "This is a 100/25 climate overlay signal validation before transaction costs, borrow costs, slippage, taxes, and execution constraints.",
             },
             "windows": windows,
         }
@@ -3593,7 +3632,7 @@ HTML = r"""<!doctype html>
     </section>
 
     <section class="panel" id="daily-reco-backtest-section">
-      <div class="panel-head"><span>Daily Buy/Sell Walk-Forward Backtest</span><span id="dailyRecoBacktestTag">3W / 3M / 3Y walk-forward</span></div>
+      <div class="panel-head"><span>Climate Buy/Sell Walk-Forward Backtest</span><span id="dailyRecoBacktestTag">3W / 3M / 3Y walk-forward</span></div>
       <div class="panel-body">
         <div class="window-tabs">
           <button class="active reco-window-btn" onclick="setRecoBacktestWindow('3w', this)">3W</button>
@@ -3841,11 +3880,11 @@ function renderDailyRecommendationBacktest(d){
   const label = summary.label || RECO_BACKTEST_WINDOW.toUpperCase();
   const context = d.portfolio_context || {};
   const tag = document.getElementById("dailyRecoBacktestTag");
-  if(tag) tag.textContent = `${label} | daily buy/sell signals | ${context.mode_label || "Portfolio universe"} | ${summary.trading_days || 0} trading days`;
+  if(tag) tag.textContent = `${label} | climate buy/sell overlay | ${context.mode_label || "Portfolio universe"} | ${summary.trading_days || 0} trading days`;
   const summaryEl = document.getElementById("dailyRecoSummary");
   if(summaryEl){
     summaryEl.innerHTML = [
-      ["Buy/Sell signal return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
+      ["Climate signal return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
       ["Universe benchmark", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0)],
       ["Signal / benchmark", Number(summary.excess_wealth_ratio || 0).toFixed(3) + "x", clsFor((summary.excess_wealth_ratio || 1) - 1)],
       ["Annualized signal", fmtPct(summary.annualized_return || 0), clsFor(summary.annualized_return || 0)],
@@ -3858,7 +3897,7 @@ function renderDailyRecommendationBacktest(d){
       "dailyRecoChart",
       rows.map(r=>String(r.date).slice(5)),
       [
-        {name:"Daily buy/sell signal", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
+        {name:"Climate buy/sell overlay", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
         {name:"Equal-weight universe", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#64748b"}
       ]
     );
@@ -3886,7 +3925,7 @@ function renderDailyRecommendationBacktest(d){
         <td class="${clsFor(r.recommended_return)}">${fmtPct(r.recommended_return)}</td>
         <td class="${clsFor(r.benchmark_return)}">${fmtPct(r.benchmark_return)}</td>
         <td class="${clsFor(r.return_difference)}"><b>${fmtPct(r.return_difference)}</b></td>
-        <td>${r.coverage}<br><span class="hint">Long ${fmtPct(r.long_book_return || 0)} | Sell book ${fmtPct(r.sell_book_return || 0)}</span></td>
+      <td>${r.coverage}<br><span class="hint">Buy book ${fmtPct(r.long_book_return || 0)} | Sell/underweight book ${fmtPct(r.sell_book_return || 0)}</span></td>
       </tr>`).join("");
   }
   const note = document.getElementById("dailyRecoNote");
