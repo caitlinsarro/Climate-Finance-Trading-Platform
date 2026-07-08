@@ -2608,6 +2608,87 @@ def build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_
     return rows
 
 
+def build_portfolio_selection_backtest_rows(portfolio_rows, prices):
+    selected = []
+    for row in portfolio_rows or []:
+        ticker = row.get("ticker")
+        weight = safe_float(row.get("target_weight"), 0.0)
+        if ticker and weight > 0:
+            selected.append(
+                {
+                    "ticker": ticker,
+                    "weight": weight,
+                    "asset_type": row.get("asset_type", ""),
+                    "sector": row.get("sector", ""),
+                    "action": row.get("action", ""),
+                    "driver": row.get("rationale", ""),
+                }
+            )
+    if not selected:
+        return []
+
+    total_weight = sum(item["weight"] for item in selected) or 1.0
+    for item in selected:
+        item["weight"] = item["weight"] / total_weight
+
+    date_sets = [set(prices.get(item["ticker"], {}).keys()) for item in selected if prices.get(item["ticker"])]
+    if not date_sets:
+        return []
+    common_dates = sorted(set.intersection(*date_sets)) if len(date_sets) == len(selected) else []
+    all_dates = sorted(set.union(*date_sets))
+    dates = common_dates if len(common_dates) >= 120 else all_dates
+    rows = []
+    for idx in range(1, len(dates)):
+        model_returns = []
+        bench_returns = []
+        covered = []
+        for item in selected:
+            price_map = prices.get(item["ticker"], {})
+            prev = price_map.get(dates[idx - 1])
+            cur = price_map.get(dates[idx])
+            if not prev or not cur:
+                continue
+            ret = cur / prev - 1
+            model_returns.append(ret * item["weight"])
+            bench_returns.append(ret)
+            covered.append(item)
+        if not model_returns or not bench_returns:
+            continue
+        portfolio_return = sum(model_returns)
+        benchmark_return = sum(bench_returns) / len(bench_returns)
+        rows.append(
+            {
+                "date": dates[idx],
+                "signal_date": dates[idx - 1],
+                "recommended_return": round(portfolio_return, 5),
+                "benchmark_return": round(benchmark_return, 5),
+                "return_difference": round(portfolio_return - benchmark_return, 5),
+                "picks": ", ".join(item["ticker"] for item in covered),
+                "top_drivers": "; ".join(
+                    f"{item['ticker']} {item['weight']:.1%} {item['action']}".strip() for item in covered[:4]
+                ),
+                "pick_details": [
+                    {
+                        "ticker": item["ticker"],
+                        "name": item["ticker"],
+                        "sector": item.get("sector", ""),
+                        "theme": item.get("asset_type", ""),
+                        "stance": item.get("action", ""),
+                        "score": item["weight"],
+                        "market_score": 0,
+                        "climate_resilience": 0,
+                        "transition_risk": 0,
+                        "momentum_20d": 0,
+                        "driver": item.get("driver", ""),
+                    }
+                    for item in covered
+                ],
+                "coverage": f"{len(covered)} / {len(selected)}",
+            }
+        )
+    return rows
+
+
 def max_drawdown_from_returns(returns):
     wealth = 1.0
     values = []
@@ -2651,7 +2732,60 @@ def summarize_daily_recommendation_window(rows, window_days, label):
     return {"summary": summary, "rows": out_rows}
 
 
-def daily_recommendation_backtest_payload(force_refresh=False):
+def daily_recommendation_backtest_payload(
+    force_refresh=False,
+    mode=None,
+    capital=None,
+    horizon=None,
+    style=None,
+    etfs="",
+    stocks="",
+    use_portfolio=False,
+):
+    if use_portfolio:
+        optimizer = portfolio_optimizer_payload(
+            mode=mode or "etf_stock",
+            capital=capital or DEFAULT_PORTFOLIO_VALUE,
+            horizon=horizon or "long",
+            style=style or "balanced",
+            etfs=etfs or "",
+            stocks=stocks or "",
+        )
+        selected_rows = optimizer.get("rows", [])
+        symbols = [r["ticker"] for r in selected_rows if r.get("ticker")]
+        prices, source = fetch_daily_close_history(symbols, period="3y")
+        rows = build_portfolio_selection_backtest_rows(selected_rows, prices)
+        windows = {
+            "3w": summarize_daily_recommendation_window(rows, 15, "3 weeks"),
+            "3m": summarize_daily_recommendation_window(rows, 63, "3 months"),
+            "3y": summarize_daily_recommendation_window(rows, 756, "3 years"),
+        }
+        return {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source": source,
+            "universe": symbols,
+            "backtest_type": "portfolio_selection",
+            "portfolio_context": {
+                "mode": optimizer.get("mode"),
+                "mode_label": optimizer.get("mode_label"),
+                "style": optimizer.get("style"),
+                "style_label": optimizer.get("style_label"),
+                "horizon": optimizer.get("horizon"),
+                "horizon_label": optimizer.get("horizon_label"),
+                "capital": optimizer.get("capital"),
+                "universe_mode": optimizer.get("universe_mode"),
+                "selected_count": len(selected_rows),
+                "selected_tickers": symbols,
+            },
+            "methodology": {
+                "model": "Portfolio-selected holdings backtest using the current optimizer tickers and target weights.",
+                "selection": "The model line applies the optimizer target weights to all selected holdings. The benchmark is an equal-weight basket of the same selected holdings.",
+                "windows": "3 weeks, 3 months, and 3 years are recalculated from daily portfolio returns.",
+                "caveat": "This is a current-selection historical diagnostic; it does not rebalance the optimizer historically or include taxes, slippage, transaction costs, or execution constraints.",
+            },
+            "windows": windows,
+        }
+
     if not force_refresh:
         cached = read_cached_daily_recommendation_backtest()
         if cached:
@@ -3194,7 +3328,7 @@ HTML = r"""<!doctype html>
     </section>
 
     <section class="panel" id="daily-reco-backtest-section">
-      <div class="panel-head"><span>Automatic Daily Stock Picker Backtest</span><span id="dailyRecoBacktestTag">3W / 3M / 3Y walk-forward</span></div>
+      <div class="panel-head"><span>Portfolio Selection Backtest</span><span id="dailyRecoBacktestTag">3W / 3M / 3Y walk-forward</span></div>
       <div class="panel-body">
         <div class="window-tabs">
           <button class="active reco-window-btn" onclick="setRecoBacktestWindow('3w', this)">3W</button>
@@ -3206,7 +3340,7 @@ HTML = r"""<!doctype html>
         <canvas id="dailyRecoChart" class="backtest-canvas"></canvas>
         <div class="split-table" style="margin-top:10px">
           <div>
-            <div class="section-title">Latest Auto Picks</div>
+            <div class="section-title">Current Portfolio Picks</div>
             <table id="dailyRecoPickTable"></table>
           </div>
           <div>
@@ -3350,7 +3484,21 @@ async function loadDailyClimateBoard(){
 }
 
 async function loadDailyRecommendationBacktest(refresh=false){
-  const res = await fetch("/api/daily_recommendation_backtest" + (refresh ? "?refresh=true" : ""));
+  const params = new URLSearchParams({portfolio:"true"});
+  if(refresh) params.set("refresh","true");
+  const modeEl = document.getElementById("optimizerMode");
+  const horizonEl = document.getElementById("optimizerHorizon");
+  const styleEl = document.getElementById("optimizerStyle");
+  const capitalEl = document.getElementById("optimizerCapital");
+  const etfsEl = document.getElementById("optimizerEtfs");
+  const stocksEl = document.getElementById("optimizerStocks");
+  if(modeEl) params.set("mode", modeEl.value);
+  if(horizonEl) params.set("horizon", horizonEl.value);
+  if(styleEl) params.set("style", styleEl.value);
+  if(capitalEl) params.set("capital", capitalEl.value);
+  if(etfsEl) params.set("etfs", etfsEl.value);
+  if(stocksEl) params.set("stocks", stocksEl.value);
+  const res = await fetch("/api/daily_recommendation_backtest?" + params.toString());
   DAILY_RECO_BACKTEST = await res.json();
   renderDailyRecommendationBacktest(DAILY_RECO_BACKTEST);
 }
@@ -3426,16 +3574,17 @@ function renderDailyRecommendationBacktest(d){
   const summary = active.summary || {};
   const rows = active.rows || [];
   const label = summary.label || RECO_BACKTEST_WINDOW.toUpperCase();
+  const context = d.portfolio_context || {};
   const tag = document.getElementById("dailyRecoBacktestTag");
-  if(tag) tag.textContent = `${label} | auto daily picker | ${d.source || "market data"} | ${summary.trading_days || 0} trading days`;
+  if(tag) tag.textContent = `${label} | ${context.mode_label || "Portfolio"} | ${context.horizon_label || "current optimizer"} | ${summary.trading_days || 0} trading days`;
   const summaryEl = document.getElementById("dailyRecoSummary");
   if(summaryEl){
     summaryEl.innerHTML = [
-      ["Auto-pick return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
-      ["Universe benchmark", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0)],
-      ["Auto-pick / benchmark", Number(summary.excess_wealth_ratio || 0).toFixed(3) + "x", clsFor((summary.excess_wealth_ratio || 1) - 1)],
-      ["Annualized auto-pick", fmtPct(summary.annualized_return || 0), clsFor(summary.annualized_return || 0)],
-      ["Auto-pick drawdown", fmtPct(summary.recommended_max_drawdown || 0), "red"],
+      ["Portfolio return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
+      ["Equal-weight same picks", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0)],
+      ["Portfolio / equal-weight", Number(summary.excess_wealth_ratio || 0).toFixed(3) + "x", clsFor((summary.excess_wealth_ratio || 1) - 1)],
+      ["Annualized portfolio", fmtPct(summary.annualized_return || 0), clsFor(summary.annualized_return || 0)],
+      ["Portfolio drawdown", fmtPct(summary.recommended_max_drawdown || 0), "red"],
       ["Winning trading days", `${summary.winning_days || 0} / ${summary.trading_days || rows.length}`, "blue"]
     ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
   }
@@ -3444,27 +3593,27 @@ function renderDailyRecommendationBacktest(d){
       "dailyRecoChart",
       rows.map(r=>String(r.date).slice(5)),
       [
-        {name:"Auto daily picks", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
-        {name:"Equal-weight stock universe", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#64748b"}
+        {name:"Optimizer-weighted portfolio", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
+        {name:"Equal-weight same picks", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#64748b"}
       ]
     );
   }
   const pickTable = document.getElementById("dailyRecoPickTable");
   if(pickTable){
     const picks = summary.latest_picks || [];
-    pickTable.innerHTML = `<tr><th>Ticker</th><th>Theme</th><th>Score</th><th>Market</th><th>Climate</th><th>Risk Driver</th></tr>` +
+    pickTable.innerHTML = `<tr><th>Ticker</th><th>Type</th><th>Portfolio Weight</th><th>Action</th><th>Sector</th><th>Optimizer Driver</th></tr>` +
       picks.map(p=>`<tr>
         <td><b>${p.ticker}</b><br><span class="hint">${p.name || ""}</span></td>
-        <td>${p.theme || p.sector}<br><span class="hint">${p.stance || "mixed"}</span></td>
-        <td><b>${Number(p.score || 0).toFixed(2)}</b></td>
-        <td>${Number(p.market_score || 0).toFixed(2)}<br><span class="hint">${fmtPct(p.momentum_20d || 0)} 20D</span></td>
-        <td>${Number(p.climate_resilience || 0).toFixed(2)}<br><span class="hint">Transition ${fmtPct(p.transition_risk || 0)}</span></td>
+        <td>${p.theme || "-"}</td>
+        <td><b>${fmtPct(p.score || 0)}</b></td>
+        <td><span class="pill ${actionPill(p.stance)}">${p.stance || "-"}</span></td>
+        <td>${p.sector || "-"}</td>
         <td>${p.driver || "-"}</td>
       </tr>`).join("");
   }
   const dayTable = document.getElementById("dailyRecoYearTable");
   if(dayTable){
-    dayTable.innerHTML = `<tr><th>Date</th><th>Picks</th><th>Model</th><th>Benchmark</th><th>Excess</th><th>Coverage</th></tr>` +
+    dayTable.innerHTML = `<tr><th>Date</th><th>Portfolio Holdings</th><th>Portfolio</th><th>Equal-weight</th><th>Excess</th><th>Coverage</th></tr>` +
       rows.slice(-18).reverse().map(r=>`<tr>
         <td><b>${r.date}</b><br><span class="hint">signal ${r.signal_date}</span></td>
         <td>${r.picks}</td>
@@ -3492,6 +3641,7 @@ async function runOptimizer(){
   const res = await fetch("/api/portfolio_optimizer?"+params.toString());
   OPTIMIZER = await res.json();
   renderOptimizer(OPTIMIZER);
+  await loadDailyRecommendationBacktest(true);
 }
 
 function renderOptimizer(o){
@@ -4551,9 +4701,21 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(load_daily_climate_signal())
             return
         if parsed.path == "/api/daily_recommendation_backtest":
-            q = parse_qs(parsed.query)
+            q = parse_qs(parsed.query, keep_blank_values=True)
             refresh = q.get("refresh", ["false"])[0].lower() in ["1", "true", "yes"]
-            self._send_json(daily_recommendation_backtest_payload(force_refresh=refresh))
+            use_portfolio = q.get("portfolio", ["false"])[0].lower() in ["1", "true", "yes"]
+            self._send_json(
+                daily_recommendation_backtest_payload(
+                    force_refresh=refresh,
+                    use_portfolio=use_portfolio,
+                    mode=q.get("mode", ["etf_stock"])[0],
+                    capital=q.get("capital", [str(DEFAULT_PORTFOLIO_VALUE)])[0],
+                    horizon=q.get("horizon", ["long"])[0],
+                    style=q.get("style", ["balanced"])[0],
+                    etfs=q.get("etfs", [""])[0],
+                    stocks=q.get("stocks", [""])[0],
+                )
+            )
             return
         self._send_json({"error": "Not found"}, status=404)
 
