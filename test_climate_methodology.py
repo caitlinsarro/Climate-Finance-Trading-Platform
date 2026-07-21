@@ -111,6 +111,34 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertAlmostEqual(budget["effective_positions"], 1 / expected_hhi, places=1)
         self.assertEqual(len(budget["checks"]), 4)
 
+    def test_walk_forward_backtest_reports_net_cost_and_turnover(self):
+        dates = [f"2026-{1 + index // 28:02d}-{1 + index % 28:02d}" for index in range(50)]
+        daily_moves = {"SPY": 0.0010, "QQQ": 0.0018, "XLE": -0.0004, "XLU": 0.0003, "XLI": 0.0007}
+        prices = {
+            symbol: {date: 100 * ((1 + move) ** index) for index, date in enumerate(dates)}
+            for symbol, move in daily_moves.items()
+        }
+        climate_rows = [{"year": 2026, "climate_risk_score": 1.0, "top_quartile_threshold": 0.5}]
+        rows = app.build_walk_forward_buy_sell_backtest_rows(
+            list(daily_moves),
+            prices,
+            climate_rows,
+            top_n=2,
+            trading_cost_bps=10,
+            annual_borrow_cost_bps=100,
+        )
+
+        self.assertTrue(rows)
+        self.assertGreater(rows[0]["turnover"], 0)
+        self.assertGreater(rows[0]["total_cost"], 0)
+        self.assertLess(rows[0]["recommended_return"], rows[0]["gross_recommended_return"])
+        window = app.summarize_daily_recommendation_window(rows, 15, "3 months")
+        self.assertGreaterEqual(
+            window["summary"]["gross_recommended_total_return"],
+            window["summary"]["recommended_total_return"],
+        )
+        self.assertIn("information_ratio", window["summary"])
+
 
 if __name__ == "__main__":
     unittest.main()

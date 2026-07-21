@@ -3432,7 +3432,16 @@ def build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_
     return rows
 
 
-def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, style="balanced", horizon="long", top_n=None):
+def build_walk_forward_buy_sell_backtest_rows(
+    symbols,
+    prices,
+    climate_rows,
+    style="balanced",
+    horizon="long",
+    top_n=None,
+    trading_cost_bps=10.0,
+    annual_borrow_cost_bps=100.0,
+):
     symbols = [yahoo_symbol(s) for s in symbols if yahoo_symbol(s)]
     date_sets = [set(prices.get(symbol, {}).keys()) for symbol in symbols if prices.get(symbol)]
     if not date_sets:
@@ -3441,6 +3450,9 @@ def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, sty
     all_dates = sorted(set.union(*date_sets))
     dates = common_dates if len(common_dates) >= 120 else all_dates
     rows = []
+    previous_positions = {}
+    trading_cost_rate = clamp(safe_float(trading_cost_bps, 10.0), 0.0, 100.0) / 10_000
+    daily_borrow_rate = clamp(safe_float(annual_borrow_cost_bps, 100.0), 0.0, 2_000.0) / 10_000 / 252
     for idx in range(25, len(dates) - 1):
         scored = []
         available = []
@@ -3481,7 +3493,21 @@ def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, sty
         long_book = sum(buy_returns) / len(buy_returns)
         sell_book = sum(sell_returns) / len(sell_returns)
         benchmark_return = sum(bench_returns) / len(bench_returns)
-        signal_return = long_book - 0.25 * sell_book
+        gross_signal_return = long_book - 0.25 * sell_book
+        positions = {symbol: 1.0 / len(buy_symbols) for symbol in buy_symbols}
+        for symbol in sell_symbols:
+            positions[symbol] = positions.get(symbol, 0.0) - 0.25 / len(sell_symbols)
+        traded_notional = sum(
+            abs(positions.get(symbol, 0.0) - previous_positions.get(symbol, 0.0))
+            for symbol in set(positions) | set(previous_positions)
+        )
+        turnover = 0.5 * traded_notional
+        short_notional = sum(abs(weight) for weight in positions.values() if weight < 0)
+        transaction_cost = traded_notional * trading_cost_rate
+        borrow_cost = short_notional * daily_borrow_rate
+        total_cost = transaction_cost + borrow_cost
+        signal_return = gross_signal_return - total_cost
+        previous_positions = positions
         pick_details = []
         for item in buys:
             detail = dict(item)
@@ -3498,10 +3524,19 @@ def build_walk_forward_buy_sell_backtest_rows(symbols, prices, climate_rows, sty
                 "date": dates[idx + 1],
                 "signal_date": dates[idx],
                 "recommended_return": round(signal_return, 5),
+                "gross_recommended_return": round(gross_signal_return, 5),
                 "benchmark_return": round(benchmark_return, 5),
                 "return_difference": round(signal_return - benchmark_return, 5),
+                "gross_return_difference": round(gross_signal_return - benchmark_return, 5),
                 "long_book_return": round(long_book, 5),
                 "sell_book_return": round(sell_book, 5),
+                "turnover": round(turnover, 5),
+                "traded_notional": round(traded_notional, 5),
+                "transaction_cost": round(transaction_cost, 6),
+                "borrow_cost": round(borrow_cost, 6),
+                "total_cost": round(total_cost, 6),
+                "gross_exposure": round(sum(abs(weight) for weight in positions.values()), 4),
+                "net_exposure": round(sum(positions.values()), 4),
                 "picks": ", ".join(buy_symbols),
                 "sells": ", ".join(sell_symbols),
                 "top_drivers": f"Buy {', '.join(buy_symbols[:3])}; Sell {', '.join(sell_symbols[:3])}",
@@ -3605,25 +3640,40 @@ def max_drawdown_from_returns(returns):
 def summarize_daily_recommendation_window(rows, window_days, label):
     subset = rows[-window_days:] if len(rows) > window_days else list(rows)
     model_wealth = 1.0
+    gross_model_wealth = 1.0
     bench_wealth = 1.0
     out_rows = []
     for row in subset:
         model_ret = safe_float(row.get("recommended_return"), 0.0)
+        gross_model_ret = safe_float(row.get("gross_recommended_return"), model_ret)
         bench_ret = safe_float(row.get("benchmark_return"), 0.0)
         model_wealth *= 1 + model_ret
+        gross_model_wealth *= 1 + gross_model_ret
         bench_wealth *= 1 + bench_ret
         out = dict(row)
         out["recommended_wealth"] = round(model_wealth, 4)
+        out["gross_recommended_wealth"] = round(gross_model_wealth, 4)
         out["benchmark_wealth"] = round(bench_wealth, 4)
         out_rows.append(out)
     returns = [safe_float(r.get("recommended_return"), 0.0) for r in out_rows]
     bench_returns = [safe_float(r.get("benchmark_return"), 0.0) for r in out_rows]
+    excess_returns = [model - bench for model, bench in zip(returns, bench_returns)]
+    mean_excess = sum(excess_returns) / max(1, len(excess_returns))
+    excess_vol = (
+        math.sqrt(sum((value - mean_excess) ** 2 for value in excess_returns) / max(1, len(excess_returns) - 1))
+        if len(excess_returns) > 1
+        else 0.0
+    )
     days = len(out_rows)
     annualized = model_wealth ** (252 / days) - 1 if days and model_wealth > 0 else 0.0
+    information_ratio = mean_excess / excess_vol * math.sqrt(252) if excess_vol > 0 else 0.0
+    average_daily_turnover = sum(safe_float(r.get("turnover"), 0.0) for r in out_rows) / max(1, days)
+    total_reported_cost = sum(safe_float(r.get("total_cost"), 0.0) for r in out_rows)
     summary = {
         "label": label,
         "trading_days": days,
         "recommended_total_return": round(model_wealth - 1, 4),
+        "gross_recommended_total_return": round(gross_model_wealth - 1, 4),
         "benchmark_total_return": round(bench_wealth - 1, 4),
         "excess_return": round(model_wealth - bench_wealth, 4),
         "excess_wealth_ratio": round(model_wealth / bench_wealth, 4) if bench_wealth else 0,
@@ -3631,6 +3681,12 @@ def summarize_daily_recommendation_window(rows, window_days, label):
         "recommended_max_drawdown": round(max_drawdown_from_returns(returns), 4),
         "benchmark_max_drawdown": round(max_drawdown_from_returns(bench_returns), 4),
         "winning_days": sum(1 for r in out_rows if safe_float(r.get("return_difference"), 0.0) > 0),
+        "hit_rate": round(sum(1 for value in excess_returns if value > 0) / max(1, days), 4),
+        "information_ratio": round(information_ratio, 3),
+        "average_daily_turnover": round(average_daily_turnover, 4),
+        "annualized_turnover": round(average_daily_turnover * 252, 4),
+        "reported_cost_sum": round(total_reported_cost, 4),
+        "compounded_cost_drag": round(gross_model_wealth - model_wealth, 4),
         "latest_picks": out_rows[-1].get("pick_details", []) if out_rows else [],
     }
     return {"summary": summary, "rows": out_rows}
@@ -3645,6 +3701,8 @@ def daily_recommendation_backtest_payload(
     etfs="",
     stocks="",
     use_portfolio=False,
+    trading_cost_bps=10.0,
+    annual_borrow_cost_bps=100.0,
 ):
     if use_portfolio:
         optimizer = portfolio_optimizer_payload(
@@ -3665,6 +3723,8 @@ def daily_recommendation_backtest_payload(
             climate_rows,
             style=style or "balanced",
             horizon=horizon or "long",
+            trading_cost_bps=trading_cost_bps,
+            annual_borrow_cost_bps=annual_borrow_cost_bps,
         )
         windows = {
             "3w": summarize_daily_recommendation_window(rows, 15, "3 weeks"),
@@ -3676,6 +3736,12 @@ def daily_recommendation_backtest_payload(
             "source": source,
             "universe": symbols,
             "backtest_type": "climate_walk_forward_buy_sell",
+            "cost_model": {
+                "trading_cost_bps": round(clamp(safe_float(trading_cost_bps, 10.0), 0.0, 100.0), 2),
+                "annual_borrow_cost_bps": round(clamp(safe_float(annual_borrow_cost_bps, 100.0), 0.0, 2_000.0), 2),
+                "return_basis": "Net of modeled trading and borrow costs",
+                "turnover_definition": "Half the sum of absolute position-weight changes; costs use full traded notional.",
+            },
             "portfolio_context": {
                 "mode": optimizer.get("mode"),
                 "mode_label": optimizer.get("mode_label"),
@@ -3692,7 +3758,8 @@ def daily_recommendation_backtest_payload(
                 "model": "Daily walk-forward climate buy/sell overlay using the current optimizer universe.",
                 "selection": "For each historical signal date, the model scores only information available up to that date, buys the strongest climate-beneficiary/resilience bucket, and underweights or shorts the highest climate-vulnerability bucket for the next trading day.",
                 "windows": "3 weeks, 3 months, and 3 years are recalculated from daily signal returns; the current portfolio is not used retroactively.",
-                "caveat": "This is a 100/25 climate overlay signal validation before transaction costs, borrow costs, slippage, taxes, and execution constraints.",
+                "costs": "Net returns deduct the selected trading cost from full traded notional and the selected annualized borrow cost from the 25% short sleeve.",
+                "caveat": "Historical climate state uses point-in-time market features and lagged annual climate calibration; it does not reconstruct a complete archive of daily NWS alerts. Slippage, taxes, financing, and market-impact constraints remain excluded.",
             },
             "windows": windows,
         }
@@ -4202,6 +4269,86 @@ HTML = r"""<!doctype html>
     @media (max-width:1320px){.risk-budget-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.decision-grid{grid-template-columns:1fr 1fr}.institution-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.control-wide{grid-column:span 1}}
     @media (max-width:1100px){header{position:sticky}.layout{grid-template-columns:1fr;padding:0 14px 30px;gap:12px}aside{position:relative;top:0;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:10px 0}.side-nav{display:flex;overflow-x:auto;margin:0}.side-nav a{flex:0 0 auto;border-left:0;border-bottom:2px solid transparent}.side-nav a:hover{border-left:0;border-bottom-color:var(--electric)}.side-block{display:none}main{padding-top:10px}.grid.kpi{grid-template-columns:repeat(3,minmax(0,1fr))}.client-summary{grid-template-columns:1fr}.institution-controls{grid-template-columns:1fr 1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.split-table,.lab-split{grid-template-columns:1fr}.lab-column+.lab-column{padding-left:0;border-left:0}.panel-head>span:last-child{max-width:48%}}
     @media (max-width:640px){header{padding:0 12px;min-height:54px}header .badge:not(#timeBadge){display:none}h1{font-size:13px}.layout{padding:0 10px 24px}.grid.kpi{grid-template-columns:1fr 1fr}.kpi-card{min-height:76px}.decision-grid,.risk-budget-grid,.institution-controls,.model-lab-controls,.lab-kpi{grid-template-columns:1fr}.grid.two,.grid.three,.grid.four{grid-template-columns:1fr}.method-flow{grid-template-columns:1fr}.method-step{border-right:0;border-bottom:1px solid var(--line)}.panel-head{align-items:flex-start;gap:10px}.panel-head>span:last-child{font-size:8px}.client-callout .headline{font-size:24px}.issuer-controls{grid-template-columns:1fr}table{min-width:700px}}
+
+    /* Typography and color refinement: research-report restraint over dashboard decoration. */
+    :root{
+      --bg:#f1f3f2;--panel:#ffffff;--panel2:#f7f8f7;--line:#d3d8dc;--text:#17212b;
+      --muted:#68737d;--blue:#355a8a;--green:#1e7358;--red:#b33f4a;--amber:#94671f;
+      --electric:#355a8a;--cyan:#6b96a2;--acid:#bdca52;--pink:#8e778e;--black:#17212b;
+    }
+    body{font-family:Aptos,"Helvetica Neue","Segoe UI",Arial,sans-serif;font-size:12.5px;line-height:1.46;color:var(--text)}
+    header{min-height:62px;border-bottom-color:#aeb6bc;gap:12px}
+    h1{font-size:15px;font-weight:650}
+    .light-mark{width:17px;height:25px;gap:2px}
+    .light-mark span{width:3px}
+    .light-mark span:nth-child(1){height:25px;background:#355a8a;box-shadow:none}
+    .light-mark span:nth-child(2){height:18px;background:#c5a43b;box-shadow:none}
+    .light-mark span:nth-child(3){height:11px;background:#a85b56;box-shadow:none}
+    .badge{font-size:10.5px;text-transform:none;font-weight:500;color:#707b84}
+    .side-nav a{font-size:12px;font-weight:600;color:#394650}
+    .side-nav a span{font-size:10px;text-transform:none;color:#838c93}
+    .side-kicker{font-size:10px;font-weight:600;text-transform:none;color:#78828a}
+    .side-value{font-size:14px;font-weight:650}
+    .side-copy{font-size:11px}
+    .panel{border-top-color:#9ca6ad}
+    .panel::before{width:48px;height:2px;background:var(--electric);box-shadow:none}
+    .panel.accent-acid::before{background:#a8b748;box-shadow:none}
+    .panel.accent-cyan::before{background:#668f9a;box-shadow:none}
+    .panel.accent-pink::before{background:#867287;box-shadow:none}
+    .panel-head{padding:19px 0 13px}
+    .panel-head>span:first-child{font-size:17px;font-weight:650}
+    .panel-head>span:last-child{font-size:10.5px;text-transform:none;font-weight:500;line-height:1.35}
+    .panel-body{padding:19px 0 23px}
+    .grid.kpi{gap:18px}
+    .kpi-card{min-height:88px;padding:12px 2px;background:transparent;border:0;border-top:1px solid var(--line)}
+    .kpi-label,.signal-card .label{font-size:10.5px;text-transform:none;font-weight:600;color:#6a747c}
+    .kpi-value{font-size:24px;font-weight:650;margin-top:9px}
+    .signal-card{min-height:78px;padding:10px 12px;background:transparent;border:0;border-left:1px solid var(--line)}
+    .signal-card .value{font-size:20px;font-weight:650;margin-top:6px}
+    .client-summary{gap:24px}
+    .client-callout{min-height:158px;background:#fff;color:var(--text);border:1px solid var(--line);border-left:4px solid #a8b748;border-radius:0;padding:20px;overflow:visible}
+    .client-callout::after{display:none}
+    .client-callout .title{color:#6b757e;font-size:10.5px;text-transform:none;font-weight:600}
+    .client-callout .headline{font-size:31px;font-weight:650;color:var(--text);margin:11px 0 7px}
+    .client-callout .headline.red{color:var(--red)}.client-callout .headline.amber{color:var(--amber)}.client-callout .headline.green{color:var(--green)}
+    .decision-grid{gap:18px;margin-top:18px}
+    .decision-cell{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;padding:12px 2px;min-height:108px}
+    .decision-cell .eyebrow{font-size:10.5px;text-transform:none;font-weight:600}
+    .decision-cell .decision{font-size:16px;font-weight:650;margin:8px 0 5px}
+    .decision-cell .detail{font-size:11px;line-height:1.45}
+    label{font-size:10.5px;text-transform:none;font-weight:600;color:#68737c}
+    textarea,input,select{border-color:#c7ced3;border-radius:0;padding:9px 10px;background:#fff}
+    textarea:focus,input:focus,select:focus{outline:2px solid rgba(53,90,138,.12);border-color:var(--blue)}
+    button{background:#233241;border-color:#233241;border-radius:0;font-weight:600;padding:9px 13px}
+    button:hover{background:#355a8a;border-color:#355a8a}
+    button.secondary{border-color:#b8c0c6;color:#34434e}
+    .toolbar button.active,.window-tabs button.active{background:#355a8a;border-color:#355a8a}
+    .auto-universe-note,.model-rule{border-left-color:#6b96a2;background:#f1f5f5;color:#3f4d56}
+    .method-flow{border-radius:0}
+    .method-step .number{font-size:10px;color:#496786;text-transform:none}
+    .risk-budget-grid{gap:14px}
+    th{font-size:10.5px;text-transform:none;font-weight:600;color:#56636d;background:#f3f5f4}
+    th,td{padding:9px 8px;border-bottom-color:#e0e4e6}
+    .pill{font-size:10px;text-transform:none;font-weight:600;border-radius:0}
+    .score-bar,.risk-meter,.attribution-track{height:5px;background:#e2e6e5}
+    .section-title{font-size:12px;text-transform:none;font-weight:650;margin:8px 0 10px}
+    .technical-details summary{font-size:12px;text-transform:none;font-weight:600}
+    .metric-strip{gap:14px}
+    .metric-strip .signal-card{flex-basis:178px}
+    #dailyRecoSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;overflow:visible;padding:0;margin:0 0 16px!important}
+    #dailyRecoSummary .signal-card{min-width:0;min-height:82px;padding:12px 14px;border-left:1px solid var(--line)}
+    #dailyRecoSummary .signal-card:nth-child(4n+1){border-left:0}
+    #dailyRecoSummary .validation-primary{border-top:2px solid #6b96a2}
+    #dailyRecoSummary .validation-primary .value{font-size:23px}
+    #dailyRecoSummary .validation-diagnostic{border-top:1px solid var(--line)}
+    #dailyRecoSummary .validation-diagnostic .value{font-size:18px}
+    .validation-controls{display:grid;grid-template-columns:minmax(330px,1fr) 145px 145px auto;gap:10px;align-items:end;margin-bottom:14px}
+    .validation-controls .window-tabs{margin:0;align-items:flex-end}
+    .validation-details{margin-top:16px}
+    #summary-section{order:1}#client-section{order:2}#optimizer-section{order:3}#daily-reco-backtest-section{order:4}
+    #model-lab-section{order:5}#cvor-section{order:6}#climate-data-section{order:7}#issuer-section{order:8}
+    @media (max-width:1100px){.validation-controls{grid-template-columns:1fr 1fr}.validation-controls .window-tabs{grid-column:1/-1}.client-summary{gap:12px}#dailyRecoSummary{grid-template-columns:repeat(2,minmax(0,1fr))}#dailyRecoSummary .signal-card:nth-child(4n+1){border-left:1px solid var(--line)}#dailyRecoSummary .signal-card:nth-child(2n+1){border-left:0}}
+    @media (max-width:640px){body{font-size:12px}header{min-height:56px}h1{font-size:13px;font-weight:650}.panel-head>span:first-child{font-size:16px}.panel-head>span:last-child{font-size:9.5px}.grid.kpi{gap:8px}.kpi-card{min-height:78px}.kpi-label,.signal-card .label{font-size:10px}.kpi-value{font-size:21px}.client-callout .headline{font-size:27px}.validation-controls{grid-template-columns:1fr}.validation-controls .window-tabs{grid-column:auto}.decision-grid{gap:8px}#dailyRecoSummary .signal-card{padding:11px 8px}.validation-primary .value{font-size:21px}}
   </style>
 </head>
 <body>
@@ -4217,9 +4364,9 @@ HTML = r"""<!doctype html>
     <nav class="side-nav" aria-label="Research workspace sections">
       <a href="#client-section">Investment View <span>Decision</span></a>
       <a href="#optimizer-section">Portfolio <span>Risk Budget</span></a>
+      <a href="#daily-reco-backtest-section">Validation <span>Net of costs</span></a>
       <a href="#model-lab-section">Scenario Lab <span>Repricing</span></a>
       <a href="#cvor-section">Stress Matrix <span>Tail</span></a>
-      <a href="#daily-reco-backtest-section">Validation <span>3W / 3M / 3Y</span></a>
       <a href="#climate-data-section">Climate Signals <span>Lineage</span></a>
       <a href="#issuer-section">Issuer Deep Dive <span>Method 2</span></a>
     </nav>
@@ -4379,26 +4526,47 @@ HTML = r"""<!doctype html>
     </section>
 
     <section class="panel accent-acid" id="daily-reco-backtest-section">
-      <div class="panel-head"><span>Point-in-Time Walk-Forward Validation</span><span id="dailyRecoBacktestTag">Historical signal date -> next trading day</span></div>
+      <div class="panel-head"><span>Portfolio Validation</span><span id="dailyRecoBacktestTag">Point-in-time signal -> next trading day | net returns</span></div>
       <div class="panel-body">
-        <div class="window-tabs">
-          <button class="active reco-window-btn" onclick="setRecoBacktestWindow('3w', this)">3W</button>
-          <button class="secondary reco-window-btn" onclick="setRecoBacktestWindow('3m', this)">3M</button>
-          <button class="secondary reco-window-btn" onclick="setRecoBacktestWindow('3y', this)">3Y</button>
-          <button class="secondary" onclick="loadDailyRecommendationBacktest(true)">Refresh</button>
+        <div class="validation-controls">
+          <div class="window-tabs">
+            <button class="active reco-window-btn" onclick="setRecoBacktestWindow('3m', this)">3M evidence</button>
+            <button class="secondary reco-window-btn" onclick="setRecoBacktestWindow('3y', this)">3Y evidence</button>
+            <button class="secondary reco-window-btn" onclick="setRecoBacktestWindow('3w', this)">3W monitor</button>
+          </div>
+          <div>
+            <label for="recoTradingCost">Trading cost</label>
+            <select id="recoTradingCost">
+              <option value="5">5 bps</option>
+              <option value="10" selected>10 bps</option>
+              <option value="20">20 bps</option>
+            </select>
+          </div>
+          <div>
+            <label for="recoBorrowCost">Annual borrow</label>
+            <select id="recoBorrowCost">
+              <option value="0">0 bps</option>
+              <option value="100" selected>100 bps</option>
+              <option value="300">300 bps</option>
+            </select>
+          </div>
+          <button class="secondary" onclick="loadDailyRecommendationBacktest(true)">Recalculate</button>
         </div>
         <div id="dailyRecoSummary" class="metric-strip" style="margin-bottom:10px"></div>
         <canvas id="dailyRecoChart" class="backtest-canvas"></canvas>
-        <div class="split-table" style="margin-top:10px">
-          <div>
-            <div class="section-title">Latest Historical Buy / Sell Signals</div>
-            <table id="dailyRecoPickTable"></table>
+        <details class="technical-details validation-details">
+          <summary>Daily signal audit trail</summary>
+          <div class="split-table" style="margin-top:10px">
+            <div>
+              <div class="section-title">Latest historical buy / sell signals</div>
+              <table id="dailyRecoPickTable"></table>
+            </div>
+            <div>
+              <div class="section-title">Recent walk-forward trading days</div>
+              <table id="dailyRecoYearTable"></table>
+            </div>
           </div>
-          <div>
-            <div class="section-title">Recent Walk-Forward Trading Days</div>
-            <table id="dailyRecoYearTable"></table>
-          </div>
-        </div>
+        </details>
         <div id="dailyRecoNote" class="hint" style="margin-top:10px"></div>
       </div>
     </section>
@@ -4513,18 +4681,11 @@ HTML = r"""<!doctype html>
 </div>
 <script>
 let DASH = null;
-let MARKET = null;
-let MARKET_PERIOD = "6mo";
-let MARKET_INTERVAL = "1d";
-let ACTIVE_TICKER = null;
 let OPTIMIZER = null;
 let DAILY_CLIMATE_BOARD = null;
 let DAILY_RECO_BACKTEST = null;
 let CLIMATE_MODEL_LAB = null;
-let RECO_BACKTEST_WINDOW = "3w";
-let TRADING_CHART = null;
-let CHART_LAYERS = {ma:true, ema:true, vwap:true, bands:false, volume:true, macd:false, dark:false};
-let CANVAS_CHART = {key:null,start:0,end:0,cross:null,drag:false,dragX:0,dragStart:0,dragEnd:0};
+let RECO_BACKTEST_WINDOW = "3m";
 
 function fmtPct(x){ return ((Number(x)||0)*100).toFixed(2)+"%"; }
 function fmtMoney(x){ return "$"+Number(x||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
@@ -4646,27 +4807,6 @@ function renderClimateModelLab(d){
   renderInvestmentCommittee();
 }
 
-async function loadMarketChart(){
-  const tickers = document.getElementById("chartInput").value;
-  const res = await fetch("/api/market_chart?tickers="+encodeURIComponent(tickers)+"&period="+encodeURIComponent(MARKET_PERIOD)+"&interval="+encodeURIComponent(MARKET_INTERVAL));
-  MARKET = await res.json();
-  ACTIVE_TICKER = MARKET.symbols.includes(ACTIVE_TICKER) ? ACTIVE_TICKER : (MARKET.active_ticker || MARKET.symbols[0]);
-  renderMarketQuotes();
-  drawCandleChart();
-}
-
-async function loadEtfWatchlist(){
-  const res = await fetch("/api/etf_watchlist");
-  const data = await res.json();
-  const table = document.getElementById("etfTable");
-  table.innerHTML = `<tr><th>Group</th><th>ETF</th><th>Last</th><th>Change</th><th>Day Range</th><th>Volume</th></tr>` +
-    data.rows.map(r=>`<tr>
-      <td>${r.group}</td><td><b>${r.ticker}</b></td><td>${fmtPrice(r.last)}</td>
-      <td class="${clsFor(r.change_pct)}">${fmtPct(r.change_pct)}</td>
-      <td>${fmtPrice(r.low)} - ${fmtPrice(r.high)}</td><td>${fmtVolume(r.volume)}</td>
-    </tr>`).join("");
-}
-
 async function loadDailyClimateBoard(){
   const res = await fetch("/api/daily_climate_board");
   DAILY_CLIMATE_BOARD = await res.json();
@@ -4682,12 +4822,16 @@ async function loadDailyRecommendationBacktest(refresh=false){
   const capitalEl = document.getElementById("optimizerCapital");
   const etfsEl = document.getElementById("optimizerEtfs");
   const stocksEl = document.getElementById("optimizerStocks");
+  const tradingCostEl = document.getElementById("recoTradingCost");
+  const borrowCostEl = document.getElementById("recoBorrowCost");
   if(modeEl) params.set("mode", modeEl.value);
   if(horizonEl) params.set("horizon", horizonEl.value);
   if(styleEl) params.set("style", styleEl.value);
   if(capitalEl) params.set("capital", capitalEl.value);
   if(etfsEl) params.set("etfs", etfsEl.value);
   if(stocksEl) params.set("stocks", stocksEl.value);
+  if(tradingCostEl) params.set("trading_cost_bps", tradingCostEl.value);
+  if(borrowCostEl) params.set("annual_borrow_cost_bps", borrowCostEl.value);
   const res = await fetch("/api/daily_recommendation_backtest?" + params.toString());
   DAILY_RECO_BACKTEST = await res.json();
   renderDailyRecommendationBacktest(DAILY_RECO_BACKTEST);
@@ -4704,13 +4848,6 @@ function setRecoBacktestWindow(key, btn){
     btn.classList.remove("secondary");
   }
   renderDailyRecommendationBacktest(DAILY_RECO_BACKTEST);
-}
-
-function actionPill(action){
-  const a = String(action || "");
-  if(a.includes("buy") || a.includes("overweight") || a.includes("Add")) return "ok";
-  if(a.includes("Reduce") || a.includes("Risk") || a.includes("hedge")) return "high";
-  return "info";
 }
 
 function renderDailyClimateBoard(d){
@@ -4748,26 +4885,29 @@ function renderDailyRecommendationBacktest(d){
   const rows = active.rows || [];
   const label = summary.label || RECO_BACKTEST_WINDOW.toUpperCase();
   const context = d.portfolio_context || {};
+  const costs = d.cost_model || {};
   const tag = document.getElementById("dailyRecoBacktestTag");
-  if(tag) tag.textContent = `${label} | climate buy/sell overlay | ${context.mode_label || "Portfolio universe"} | ${summary.trading_days || 0} trading days`;
+  if(tag) tag.textContent = `${label} | net of ${Number(costs.trading_cost_bps || 0).toFixed(0)} bps trading + ${Number(costs.annual_borrow_cost_bps || 0).toFixed(0)} bps annual borrow | ${summary.trading_days || 0} days`;
   const summaryEl = document.getElementById("dailyRecoSummary");
   if(summaryEl){
     summaryEl.innerHTML = [
-      ["Climate signal return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0)],
-      ["Universe benchmark", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0)],
-      ["Signal / benchmark", Number(summary.excess_wealth_ratio || 0).toFixed(3) + "x", clsFor((summary.excess_wealth_ratio || 1) - 1)],
-      ["Annualized signal", fmtPct(summary.annualized_return || 0), clsFor(summary.annualized_return || 0)],
-      ["Signal drawdown", fmtPct(summary.recommended_max_drawdown || 0), "red"],
-      ["Winning trading days", `${summary.winning_days || 0} / ${summary.trading_days || rows.length}`, "blue"]
-    ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
+      ["Net signal return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0), "After modeled costs", "validation-primary"],
+      ["Net excess return", fmtPct(summary.excess_return || 0), clsFor(summary.excess_return || 0), `${Number(summary.excess_wealth_ratio || 0).toFixed(3)}x terminal wealth`, "validation-primary"],
+      ["Maximum drawdown", fmtPct(summary.recommended_max_drawdown || 0), "red", "Net signal wealth", "validation-primary"],
+      ["Information ratio", Number(summary.information_ratio || 0).toFixed(2), clsFor(summary.information_ratio || 0), `${fmtPct(summary.hit_rate || 0)} excess hit rate`, "validation-primary"],
+      ["Gross signal return", fmtPct(summary.gross_recommended_total_return || 0), clsFor(summary.gross_recommended_total_return || 0), "Before modeled costs", "validation-diagnostic"],
+      ["Universe benchmark", fmtPct(summary.benchmark_total_return || 0), clsFor(summary.benchmark_total_return || 0), context.mode_label || "Selected universe", "validation-diagnostic"],
+      ["Compounded cost drag", fmtPct(summary.compounded_cost_drag || 0), "amber", `${fmtPct(summary.reported_cost_sum || 0)} summed daily cost`, "validation-diagnostic"],
+      ["Annualized turnover", Number(summary.annualized_turnover || 0).toFixed(1) + "x", "blue", `${fmtPct(summary.average_daily_turnover || 0)} average daily`, "validation-diagnostic"]
+    ].map(c=>`<div class="signal-card ${c[4]}"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div><div class="hint">${c[3]}</div></div>`).join("");
   }
   if(rows.length){
     drawLineChart(
       "dailyRecoChart",
       rows.map(r=>String(r.date).slice(5)),
       [
-        {name:"Climate buy/sell overlay", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#078a4f"},
-        {name:"Equal-weight universe", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#64748b"}
+        {name:"Climate signal, net", values:rows.map(r=>Number(r.recommended_wealth || 1)), color:"#18765d"},
+        {name:"Equal-weight universe", values:rows.map(r=>Number(r.benchmark_wealth || 1)), color:"#6b7480"}
       ]
     );
   }
@@ -4786,20 +4926,21 @@ function renderDailyRecommendationBacktest(d){
   }
   const dayTable = document.getElementById("dailyRecoYearTable");
   if(dayTable){
-    dayTable.innerHTML = `<tr><th>Date</th><th>Buy Signals</th><th>Sell Signals</th><th>Signal</th><th>Benchmark</th><th>Excess</th><th>Coverage</th></tr>` +
+    dayTable.innerHTML = `<tr><th>Date</th><th>Buy signals</th><th>Sell signals</th><th>Net</th><th>Gross</th><th>Benchmark</th><th>Excess</th><th>Turnover / cost</th></tr>` +
       rows.slice(-18).reverse().map(r=>`<tr>
         <td><b>${r.date}</b><br><span class="hint">signal ${r.signal_date}</span></td>
         <td>${r.picks}</td>
         <td>${r.sells || "-"}</td>
         <td class="${clsFor(r.recommended_return)}">${fmtPct(r.recommended_return)}</td>
+        <td class="${clsFor(r.gross_recommended_return)}">${fmtPct(r.gross_recommended_return)}</td>
         <td class="${clsFor(r.benchmark_return)}">${fmtPct(r.benchmark_return)}</td>
         <td class="${clsFor(r.return_difference)}"><b>${fmtPct(r.return_difference)}</b></td>
-      <td>${r.coverage}<br><span class="hint">Buy book ${fmtPct(r.long_book_return || 0)} | Sell/underweight book ${fmtPct(r.sell_book_return || 0)}</span></td>
+        <td>${fmtPct(r.turnover || 0)}<br><span class="hint">${Number((r.total_cost || 0)*10000).toFixed(1)} bps | coverage ${r.coverage}</span></td>
       </tr>`).join("");
   }
   const note = document.getElementById("dailyRecoNote");
   if(note && d.methodology){
-    note.textContent = `${d.methodology.model} ${d.methodology.selection} ${d.methodology.caveat}`;
+    note.textContent = `${d.methodology.model} ${d.methodology.selection} ${d.methodology.costs || ""} ${d.methodology.caveat}`;
   }
   renderInvestmentCommittee();
 }
@@ -4877,35 +5018,6 @@ function renderOptimizer(o){
   renderInvestmentCommittee();
 }
 
-function setMarketWindow(period, interval, btn){
-  MARKET_PERIOD = period;
-  MARKET_INTERVAL = interval || "1d";
-  document.querySelectorAll(".range-btn").forEach(b=>b.classList.remove("active"));
-  if(btn) btn.classList.add("active");
-  loadMarketChart();
-}
-
-function selectChartTicker(ticker){
-  ACTIVE_TICKER = ticker;
-  renderMarketQuotes();
-  drawCandleChart();
-}
-
-function renderMarketQuotes(){
-  if(!MARKET) return;
-  const intraday = MARKET.interval !== "1d" ? " | refreshed about every 20s" : "";
-  document.getElementById("marketSourceTag").textContent = MARKET.source + " | " + MARKET.period + " / " + MARKET.interval + intraday;
-  document.getElementById("activeTickerTag").textContent = ACTIVE_TICKER || "-";
-  const table = document.getElementById("quoteTable");
-  table.innerHTML = `<tr><th>Ticker</th><th>Last</th><th>Chg%</th><th>High</th><th>Low</th><th>Volume</th></tr>` +
-    MARKET.quotes.map(q=>`<tr onclick="selectChartTicker('${q.ticker}')" style="cursor:pointer">
-      <td><b>${q.ticker}</b> ${q.ticker===ACTIVE_TICKER?'<span class="pill info">chart</span>':''}</td>
-      <td>${fmtPrice(q.last)}</td>
-      <td class="${clsFor(q.change_pct)}"><b>${fmtPct(q.change_pct)}</b></td>
-      <td>${fmtPrice(q.high)}</td><td>${fmtPrice(q.low)}</td><td>${fmtVolume(q.volume)}</td>
-    </tr>`).join("");
-}
-
 function scoreClass(score){
   const n = Number(score || 0);
   if(n >= 0.66) return "danger";
@@ -4974,7 +5086,7 @@ function renderInvestmentCommittee(){
   const shortTerm = (CLIMATE_MODEL_LAB && CLIMATE_MODEL_LAB.short_term) || {};
   const threeMonth = DAILY_RECO_BACKTEST && DAILY_RECO_BACKTEST.windows ? DAILY_RECO_BACKTEST.windows["3m"] : null;
   const validation = threeMonth && threeMonth.summary
-    ? `${fmtPct(threeMonth.summary.recommended_total_return || 0)} signal vs ${fmtPct(threeMonth.summary.benchmark_total_return || 0)} universe`
+    ? `${fmtPct(threeMonth.summary.recommended_total_return || 0)} net signal vs ${fmtPct(threeMonth.summary.benchmark_total_return || 0)} universe`
     : "Walk-forward evidence loading";
   el.innerHTML = [
     ["Strategic posture", view.posture || ci.risk_level || "Watch", view.strategic_action || ci.client_action || "-"],
@@ -5077,19 +5189,6 @@ function renderDailyClimateSignal(d){
         <td>${source}</td>
       </tr>`;
     }).join("");
-}
-
-function renderAllocation(rows){
-  const table = document.getElementById("allocationTable");
-  table.innerHTML = `<tr><th>ETF</th><th>Sector</th><th>Benchmark</th><th>Long-Term Climate</th><th>Daily +/-</th><th>Final Target</th><th>Target Dollars</th><th>Action</th><th>Climate Logic</th></tr>` +
-    rows.map(r => `<tr>
-      <td><b>${r.ticker}</b></td><td>${r.sector}</td><td>${fmtPct(r.benchmark_weight)}</td>
-      <td>${fmtPct(r.base_climate_weight ?? r.climate_weight)} <span class="hint">(${fmtBps(r.long_term_adjustment_bps || 0)})</span></td>
-      <td class="${Number(r.daily_adjustment_bps || 0)>=0?'green':'red'}"><b>${fmtBps(r.daily_adjustment_bps || 0)}</b></td>
-      <td><b>${fmtPct(r.climate_weight)}</b></td><td>${fmtMoney(r.target_dollars)}</td>
-      <td><span class="pill ${r.action.includes("Over")?"ok":(r.action.includes("Under")?"high":"info")}">${r.action}</span></td>
-      <td>${r.daily_driver || r.sector_note}<br><span class="hint">${r.sector_note}</span></td>
-    </tr>`).join("");
 }
 
 function renderScenarios(rows, summary={}){
@@ -5957,6 +6056,8 @@ class Handler(BaseHTTPRequestHandler):
                     style=q.get("style", ["balanced"])[0],
                     etfs=q.get("etfs", [""])[0],
                     stocks=q.get("stocks", [""])[0],
+                    trading_cost_bps=q.get("trading_cost_bps", ["10"])[0],
+                    annual_borrow_cost_bps=q.get("annual_borrow_cost_bps", ["100"])[0],
                 )
             )
             return

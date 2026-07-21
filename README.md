@@ -12,12 +12,19 @@ Institutional U.S.-listed climate-finance research workspace for portfolio decis
 - Long-term target-vs-reference repricing through climate-adjusted cash flows and present value
 - Short-term NWS event nowcast translating hazard intensity, exposure beta, and vulnerability into tactical basis points
 - Conditional scenario-tail matrix with no assigned occurrence probabilities and no claim of regulatory Expected Shortfall
-- Point-in-time climate buy/sell walk-forward validation over 3 weeks, 3 months, and 3 years using the selected portfolio universe
+- Point-in-time climate buy/sell walk-forward validation over 3 weeks, 3 months, and 3 years using the selected portfolio universe; 3 months is the default evidence window and 3 weeks is explicitly treated as a monitoring diagnostic
+- Configurable trading and short-borrow costs with net and gross return, compounded cost drag, turnover, drawdown, hit rate, and information-ratio reporting
 - Climate Signals, Data Lineage & Coverage view combining NWS, NASA GISTEMP, NOAA GML CO2, NCEI disasters, allocation transmission, source status, and known data gaps
 - Explicit separation of observed inputs, calibrated proxies, and missing facility/revenue/supply-chain data
 - Company-level Method 2 Climate VaR scanner with BAU vs 2C comparison, P95/P99/CVOR95, market-cap context, and data-quality labels
 - Automatic climate universe ranked from market behavior, live climate conditions, sector transmission, issuer resilience, and Method 2 tail risk
 - Institutional, responsive UI focused on decision, attribution, risk budget, and validation rather than generic quote or chart screens
+
+## Validation discipline
+
+The validation view evaluates the same universe selected by the portfolio optimizer. Each historical signal date ranks assets using information available up to that date, applies the buy and sell sleeves for the next trading day, and deducts modeled trading and borrow costs. The 3-week result is directional, the 3-month result is the default tactical evidence window, and the 3-year result provides longer-horizon context.
+
+Historical market features are point-in-time. Climate calibration is lagged by year, but the prototype does not reconstruct a complete archived daily NWS alert tape. Reported results therefore remain research evidence rather than a production performance claim, and they exclude market impact, taxes, financing, and security-level locate constraints.
 
 ## U.S. Market Assumptions
 

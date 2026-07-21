@@ -8,6 +8,8 @@ env/
 
 server.out.log
 server.err.log
+server.out
+server.err
 
 data/*.json
 
