@@ -16,7 +16,7 @@ Institutional U.S.-listed climate-finance research workspace for portfolio decis
 - Configurable trading and short-borrow costs with net and gross return, compounded cost drag, turnover, drawdown, hit rate, and information-ratio reporting
 - Climate Signals, Data Lineage & Coverage view combining NWS, NASA GISTEMP, NOAA GML CO2, NCEI disasters, allocation transmission, source status, and known data gaps
 - Explicit separation of observed inputs, calibrated proxies, and missing facility/revenue/supply-chain data
-- Company-level Method 2 Climate VaR scanner with BAU vs 2C comparison, P95/P99/tail-mean-95, market-cap context, and data-quality labels
+- Issuer analysis inside the same target-versus-reference Scenario Lab used for country, sector, and portfolio scopes
 - Automatic climate universe ranked from market behavior, live climate conditions, sector transmission, issuer resilience, and conditional scenario loss
 - Institutional, responsive UI focused on decision, attribution, risk budget, and validation rather than generic quote or chart screens
 
@@ -33,21 +33,6 @@ Historical market features are point-in-time. Annual climate features use expand
 - Supports single-share/fractional-share style allocation logic
 - Research prototype only; not live investment advice
 
-## Method 2 Alignment
-
-The issuer valuation scanner follows the logic of Dietz, Bowen, Dixon and Gradwell (2016), "Climate value at risk of global financial assets":
-
-- Compare the present value of a no-climate-damage cash-flow path with a climate-damaged path
-- Express Climate VaR as the PV loss divided by the no-damage PV
-- Use private-investor discounting rather than social discounting
-- Use a DICE-style damage function: `g(T)=0.0028*T^2+(alpha3*T)^7`
-- Sample uncertainty in productivity growth, climate sensitivity, and damage curvature
-- Report mean, P95, P99, and the empirical mean of losses at or above P95 for each issuer
-- Report how much a 2C pathway reduces issuer P95 and tail-mean-95 climate-impact risk
-- Use official current warming as the observed starting point; keep CO2, disaster, and NWS signals in separate modules so they are not counted twice in the valuation path
-
-This is still a company-level approximation because true Method 2 DICE runs are global and require full IAM scenario paths. The platform maps the global method to U.S. issuers through sector sensitivity, beta, market capitalization, and available growth data.
-
 ## Scenario & Event Methodology
 
 The platform now separates strategic climate valuation from tactical event risk:
@@ -58,7 +43,7 @@ The platform now separates strategic climate valuation from tactical event risk:
 - `Scenario rule`: NGFS-style scenarios are conditional stresses, not forecasts. The model does not assign occurrence probabilities to them.
 - `Tail rule`: the mean of the two largest portfolio scenario losses is labeled a scenario-tail proxy, not regulatory Expected Shortfall. It is kept separate from physical and transition pressure to avoid double counting.
 
-The scenario paths, sector medians, and issuer vulnerability ratios in this prototype are documented, replaceable calibrations. They are not Bloomberg data. A production implementation should replace issuer proxies with geolocated facilities, revenue segmentation, supply-chain links, and licensed NGFS or vendor scenario data.
+The scenario paths, sector medians, and issuer vulnerability ratios in this prototype are documented, replaceable calibrations. They are not Bloomberg data. The former stand-alone issuer Monte Carlo module was removed because its distributional assumptions were not calibrated strongly enough to support precise P95/P99 claims. Issuer scope now uses the same auditable target-reference scenario engine as every other scope. A production implementation should replace issuer proxies with geolocated facilities, revenue segmentation, supply-chain links, and licensed NGFS or vendor scenario data.
 
 The physical downscaling follows the structure described in the supplied Bloomberg methodology: sector loss equals country loss multiplied by sector vulnerability divided by the economy-weighted average vulnerability; issuer loss then applies a bounded issuer-to-sector vulnerability ratio. Covered-sector value-added weights reconcile the weighted sector multiplier to exactly `1.0`. The app exposes this check, portfolio-weight reconciliation, target/reference present values, and Shapley residuals in the Calculation Ledger.
 
@@ -98,7 +83,7 @@ The app caches official climate data locally under `data/official_climate_data_c
 pip install -r requirements.txt
 ```
 
-`yfinance`, `pandas`, and `numpy` are optional but recommended. If market data is unavailable, the app falls back to deterministic simulated returns so the dashboard still runs.
+`yfinance`, `pandas`, and `numpy` are optional but recommended. If verified market data is unavailable or insufficient, portfolio validation is suppressed and labeled unavailable. The app does not substitute simulated prices or returns into client-facing performance.
 
 ## Run
 

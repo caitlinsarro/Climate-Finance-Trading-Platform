@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import math
-import random
 import sys
 import threading
 import time
@@ -47,21 +46,12 @@ PORT = 8865
 DEFAULT_PORTFOLIO_VALUE = 50_000_000
 START_YEAR = 2009
 CURRENT_YEAR = datetime.now().year
-METHOD2_END_YEAR = 2100
-METHOD2_DRAWS = 900
-METHOD2_DISCOUNT_RATE = 0.0407
-METHOD2_DISCOUNT_SPREAD = 0.0036
-METHOD2_ALPHA2 = 0.0028
-METHOD2_ALPHA3_MAX = 0.248
 CURRENT_WARMING_C = 1.28
 FIRM_VULNERABILITY_MIN = 0.55
 FIRM_VULNERABILITY_MAX = 1.45
 SCENARIO_TAIL_COUNT = 2
 TACTICAL_OVERLAY_LIMIT_BPS = 250
 
-NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
-OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
-UNIVERSE_CACHE = DATA_DIR / "us_listed_universe_cache.json"
 NASA_GISTEMP_CSV_URL = "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv"
 NOAA_CO2_CSV_URL = "https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.csv"
 NCEI_BILLION_EVENTS_JSON_URL = "https://www.ncei.noaa.gov/monitoring-content/billions/data/events.json"
@@ -69,7 +59,6 @@ CLIMATE_DATA_CACHE = DATA_DIR / "official_climate_data_cache.json"
 NWS_ACTIVE_ALERTS_URL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert"
 DAILY_CLIMATE_CACHE = DATA_DIR / "daily_climate_alerts_cache.json"
 NWS_USER_AGENT = "JennisonClimateFinancePrototype/1.0 (local research)"
-DAILY_RECO_BACKTEST_CACHE = DATA_DIR / "daily_recommendation_backtest_cache.json"
 FEMA_NRI_URL = "https://www.fema.gov/flood-maps/products-tools/national-risk-index"
 FEMA_NRI_DATA_URL = "https://www.fema.gov/about/openfema/data-sets/national-risk-index-data"
 NASA_FIRMS_URL = "https://firms.modaps.eosdis.nasa.gov/"
@@ -556,16 +545,6 @@ US_MARKET_NOTES = [
 ]
 
 
-EXCHANGE_MAP = {
-    "Q": "NASDAQ",
-    "N": "NYSE",
-    "A": "NYSE American",
-    "P": "NYSE Arca",
-    "Z": "Cboe BZX",
-    "V": "IEX",
-}
-
-
 def safe_float(value, default=0.0):
     try:
         if value is None:
@@ -575,18 +554,6 @@ def safe_float(value, default=0.0):
         return float(value)
     except Exception:
         return default
-
-
-def zscores(values):
-    vals = [safe_float(v, 0.0) for v in values]
-    if not vals:
-        return []
-    mean = sum(vals) / len(vals)
-    var = sum((v - mean) ** 2 for v in vals) / max(1, len(vals) - 1)
-    std = math.sqrt(var)
-    if std <= 1e-12:
-        return [0.0 for _ in vals]
-    return [(v - mean) / std for v in vals]
 
 
 def clamp(value, low, high):
@@ -619,22 +586,6 @@ def expanding_zscore(values, index):
 
 def yahoo_symbol(symbol):
     return str(symbol).strip().upper().replace(".", "-")
-
-
-def parse_pipe_rows(text):
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        return []
-    headers = lines[0].split("|")
-    rows = []
-    for line in lines[1:]:
-        if line.startswith("File Creation Time"):
-            continue
-        parts = line.split("|")
-        if len(parts) != len(headers):
-            continue
-        rows.append(dict(zip(headers, parts)))
-    return rows
 
 
 def download_text(url, timeout=12, headers=None):
@@ -1182,116 +1133,6 @@ def apply_daily_climate_overlay(latest_alloc, daily_signal):
     return adjusted
 
 
-def fallback_us_universe():
-    rows = [
-        ("AAPL", "Apple Inc. Common Stock", "NASDAQ", False),
-        ("MSFT", "Microsoft Corporation Common Stock", "NASDAQ", False),
-        ("NVDA", "NVIDIA Corporation Common Stock", "NASDAQ", False),
-        ("AMZN", "Amazon.com Inc. Common Stock", "NASDAQ", False),
-        ("GOOGL", "Alphabet Inc. Class A Common Stock", "NASDAQ", False),
-        ("META", "Meta Platforms Inc. Class A Common Stock", "NASDAQ", False),
-        ("TSLA", "Tesla Inc. Common Stock", "NASDAQ", False),
-        ("JPM", "JPMorgan Chase & Co. Common Stock", "NYSE", False),
-        ("XOM", "Exxon Mobil Corporation Common Stock", "NYSE", False),
-        ("CVX", "Chevron Corporation Common Stock", "NYSE", False),
-        ("NEE", "NextEra Energy Inc. Common Stock", "NYSE", False),
-        ("CAT", "Caterpillar Inc. Common Stock", "NYSE", False),
-        ("XLE", "Energy Select Sector SPDR Fund", "NYSE Arca", True),
-        ("XLK", "Technology Select Sector SPDR Fund", "NYSE Arca", True),
-    ]
-    return [
-        {
-            "symbol": s,
-            "name": n,
-            "exchange": e,
-            "is_etf": is_etf,
-            "security_type": "ETF" if is_etf else "Common Stock",
-            "source": "fallback",
-        }
-        for s, n, e, is_etf in rows
-    ]
-
-
-def load_us_listed_universe(force_refresh=False):
-    if not force_refresh and UNIVERSE_CACHE.exists():
-        age_days = (time.time() - UNIVERSE_CACHE.stat().st_mtime) / 86400
-        if age_days <= 7:
-            try:
-                return json.loads(UNIVERSE_CACHE.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-
-    universe = []
-    try:
-        nasdaq_rows = parse_pipe_rows(download_text(NASDAQ_LISTED_URL))
-        for row in nasdaq_rows:
-            if row.get("Test Issue", "N") != "N":
-                continue
-            symbol = row.get("Symbol", "").strip()
-            if not symbol:
-                continue
-            is_etf = row.get("ETF", "N") == "Y"
-            universe.append(
-                {
-                    "symbol": symbol,
-                    "name": row.get("Security Name", symbol).strip(),
-                    "exchange": "NASDAQ",
-                    "is_etf": is_etf,
-                    "security_type": "ETF" if is_etf else "Common Stock",
-                    "source": "nasdaqtrader",
-                }
-            )
-
-        other_rows = parse_pipe_rows(download_text(OTHER_LISTED_URL))
-        for row in other_rows:
-            if row.get("Test Issue", "N") != "N":
-                continue
-            symbol = row.get("ACT Symbol", "").strip()
-            if not symbol:
-                continue
-            is_etf = row.get("ETF", "N") == "Y"
-            exchange = EXCHANGE_MAP.get(row.get("Exchange", ""), row.get("Exchange", "Other"))
-            universe.append(
-                {
-                    "symbol": symbol,
-                    "name": row.get("Security Name", symbol).strip(),
-                    "exchange": exchange,
-                    "is_etf": is_etf,
-                    "security_type": "ETF" if is_etf else "Common Stock",
-                    "source": "nasdaqtrader",
-                }
-            )
-    except Exception:
-        universe = fallback_us_universe()
-
-    deduped = {}
-    for row in universe:
-        symbol = row["symbol"]
-        if symbol not in deduped:
-            deduped[symbol] = row
-    out = sorted(deduped.values(), key=lambda r: (r["is_etf"], r["symbol"]))
-    try:
-        UNIVERSE_CACHE.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-    return out
-
-
-def search_us_universe(query="", limit=80, include_etfs=False):
-    query = str(query or "").strip().upper()
-    limit = int(clamp(safe_float(limit, 80), 1, 500))
-    rows = load_us_listed_universe()
-    if not include_etfs:
-        rows = [r for r in rows if not r.get("is_etf")]
-    if query:
-        tokens = [t for t in query.replace(",", " ").split() if t]
-        def matches(row):
-            haystack = f"{row.get('symbol','')} {row.get('name','')} {row.get('exchange','')}".upper()
-            return all(t in haystack for t in tokens)
-        rows = [r for r in rows if matches(r)]
-    return rows[:limit]
-
-
 def climate_signal():
     official = load_official_climate_data()
     source_rows = official.get("rows", [])
@@ -1447,169 +1288,6 @@ def climate_scenario_matrix(allocation_rows):
     return rows, summary
 
 
-def method2_damage_fraction(temp_c, alpha3):
-    # Dietz et al. Method 2 uses D_t = 1 / (1 + g(T_t)).
-    # The loss share is therefore 1 - D_t, with g(T) = alpha2*T^2 + (alpha3*T)^7.
-    g_t = METHOD2_ALPHA2 * (temp_c ** 2) + ((alpha3 * temp_c) ** 7)
-    return 1 - (1 / (1 + g_t))
-
-
-def method2_temperature_path(step, steps, target_warming, current_warming=CURRENT_WARMING_C):
-    progress = step / max(1, steps)
-    return current_warming + (target_warming - current_warming) * (progress ** 1.15)
-
-
-def method2_loss_pct_for_path(steps, cashflow_growth, discount_rate, target_warming, alpha3, company_exposure, current_warming):
-    pv_no_damage = 0.0
-    pv_climate_damage = 0.0
-    cashflow_no_damage = 1.0
-    for step in range(1, steps + 1):
-        cashflow_no_damage *= 1 + cashflow_growth
-        temp = method2_temperature_path(step, steps, target_warming, current_warming=current_warming)
-        global_damage = method2_damage_fraction(temp, alpha3)
-        issuer_damage = clamp(global_damage * company_exposure, 0.0, 0.75)
-        discount = (1 + discount_rate) ** step
-        pv_no_damage += cashflow_no_damage / discount
-        pv_climate_damage += (cashflow_no_damage * (1 - issuer_damage)) / discount
-    return max(0.0, (pv_no_damage - pv_climate_damage) / max(1e-12, pv_no_damage))
-
-
-def summarize_method2_losses(losses, market_cap):
-    losses = sorted(losses)
-    mean_loss = sum(losses) / max(1, len(losses))
-    p95 = percentile(losses, 0.95)
-    p99 = percentile(losses, 0.99)
-    tail = [x for x in losses if x >= p95] or [p95]
-    tail_mean = sum(tail) / len(tail)
-    return {
-        "mean_pct": round(mean_loss, 4),
-        "p95_pct": round(p95, 4),
-        "p99_pct": round(p99, 4),
-        "cvor95_pct": round(tail_mean, 4),
-        "mean_dollars": round(mean_loss * market_cap, 2),
-        "cvor95_dollars": round(tail_mean * market_cap, 2),
-    }
-
-
-def method2_data_quality(info):
-    score = 20
-    notes = []
-    if info.get("marketCap"):
-        score += 25
-    else:
-        notes.append("market cap fallback")
-    if info.get("sector"):
-        score += 20
-    else:
-        notes.append("sector inferred")
-    if info.get("beta") is not None:
-        score += 15
-    else:
-        notes.append("beta fallback")
-    if info.get("revenueGrowth") is not None or info.get("earningsGrowth") is not None:
-        score += 15
-    else:
-        notes.append("growth fallback")
-    if info.get("shortName") or info.get("longName"):
-        score += 5
-    return {
-        "score": int(clamp(score, 0, 100)),
-        "label": "High" if score >= 80 else ("Medium" if score >= 55 else "Low"),
-        "notes": ", ".join(notes) if notes else "market data available",
-    }
-
-
-def method2_company_cvor(ticker, info=None, draws=METHOD2_DRAWS, end_year=METHOD2_END_YEAR):
-    info = info or {}
-    context = climate_data_context()
-    symbol = yahoo_symbol(ticker)
-    sector = info.get("sector") or guess_sector(symbol)
-    sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, 0.50)
-    market_cap = safe_float(info.get("marketCap"), fallback_market_cap(symbol))
-    beta = safe_float(info.get("beta"), 1.0)
-    revenue_growth = safe_float(info.get("revenueGrowth"), 0.0)
-    earnings_growth = safe_float(info.get("earningsGrowth"), 0.0)
-    growth_signal = revenue_growth if abs(revenue_growth) > 1e-6 else earnings_growth
-    growth_signal = clamp(growth_signal, -0.05, 0.08)
-    steps = max(20, int(end_year - CURRENT_YEAR))
-    rng = random.Random(sum(ord(c) for c in symbol) + 2100)
-    bau_losses = []
-    mitigation_losses = []
-
-    for _ in range(int(draws)):
-        tfp_growth = clamp(rng.gauss(0.0084, 0.0059), -0.006, 0.026)
-        cashflow_growth = clamp(0.024 + tfp_growth + 0.18 * growth_signal, 0.004, 0.060)
-        climate_sensitivity = clamp(rng.lognormvariate(math.log(2.9) - 0.5 * (0.38 ** 2), 0.38), 0.75, 6.0)
-        bau_target_warming = clamp(2.5 * climate_sensitivity / 2.9, max(context["current_warming"], 1.35), 5.95)
-        mitigation_target_warming = min(bau_target_warming, clamp(2.0 * climate_sensitivity / 2.9, max(1.10, context["current_warming"] * 0.95), 3.35))
-        alpha3 = rng.uniform(0.0, METHOD2_ALPHA3_MAX)
-        discount_rate = clamp(METHOD2_DISCOUNT_RATE + 0.006 * (beta - 1.0), 0.025, 0.075)
-        company_exposure = clamp(0.42 + 0.92 * sensitivity + 0.14 * max(0.0, beta - 1.0), 0.28, 1.95)
-        bau_losses.append(method2_loss_pct_for_path(steps, cashflow_growth, discount_rate, bau_target_warming, alpha3, company_exposure, context["current_warming"]))
-        mitigation_losses.append(method2_loss_pct_for_path(steps, cashflow_growth, discount_rate, mitigation_target_warming, alpha3, company_exposure, context["current_warming"]))
-
-    bau = summarize_method2_losses(bau_losses, market_cap)
-    mitigation = summarize_method2_losses(mitigation_losses, market_cap)
-    quality = method2_data_quality(info)
-    return {
-        "method2_mean_pct": bau["mean_pct"],
-        "method2_p95_pct": bau["p95_pct"],
-        "method2_p99_pct": bau["p99_pct"],
-        "method2_cvor95_pct": bau["cvor95_pct"],
-        "method2_mean_dollars": bau["mean_dollars"],
-        "method2_cvor95_dollars": bau["cvor95_dollars"],
-        "method2_2c_mean_pct": mitigation["mean_pct"],
-        "method2_2c_p95_pct": mitigation["p95_pct"],
-        "method2_2c_p99_pct": mitigation["p99_pct"],
-        "method2_2c_cvor95_pct": mitigation["cvor95_pct"],
-        "method2_2c_cvor95_dollars": mitigation["cvor95_dollars"],
-        "method2_p95_reduction_pct": round(max(0.0, bau["p95_pct"] - mitigation["p95_pct"]), 4),
-        "method2_cvor95_reduction_pct": round(max(0.0, bau["cvor95_pct"] - mitigation["cvor95_pct"]), 4),
-        "method2_market_cap": round(market_cap, 2),
-        "method2_discount_rate": round(clamp(METHOD2_DISCOUNT_RATE + 0.006 * (beta - 1.0), 0.025, 0.075), 4),
-        "method2_horizon_year": end_year,
-        "method2_draws": int(draws),
-        "method2_sector": sector,
-        "method2_sector_sensitivity": round(sensitivity, 3),
-        "method2_current_warming": context["current_warming"],
-        "method2_climate_data_year": context["latest_year"],
-        "method2_co2_ppm": context["co2_ppm"],
-        "method2_disaster_10y_avg": context["disaster_10y_avg"],
-        "method2_climate_source_mode": context["source_mode"],
-        "method2_data_quality_score": quality["score"],
-        "method2_data_quality_label": quality["label"],
-        "method2_data_quality_notes": quality["notes"],
-        "method2_note": "PV loss from climate-damaged cash-flow path vs no-damage counterfactual, based on Dietz et al. Method 2. The 2C path excludes mitigation costs, matching climate-impact VaR rather than net transition-cost PV.",
-    }
-
-
-def fetch_etf_prices(tickers, start=f"{START_YEAR}-01-01"):
-    cache = DATA_DIR / "etf_prices_cache.json"
-    if yf is not None:
-        try:
-            data = yf.download(tickers, start=start, auto_adjust=True, progress=False, threads=True)
-            if data is not None and not data.empty:
-                close = data["Close"] if "Close" in data.columns else data
-                if hasattr(close, "dropna"):
-                    annual = {}
-                    for t in tickers:
-                        series = close[t].dropna() if t in close else close.dropna()
-                        if len(series) > 30:
-                            yearly = series.resample("YE").last().pct_change().dropna()
-                            annual[t] = {str(idx.year): round(float(v), 5) for idx, v in yearly.items()}
-                    if annual:
-                        cache.write_text(json.dumps(annual, indent=2), encoding="utf-8")
-                        return annual, "yfinance live market data"
-        except Exception:
-            pass
-    if cache.exists():
-        try:
-            return json.loads(cache.read_text(encoding="utf-8")), "cached yfinance market data"
-        except Exception:
-            pass
-    return simulated_annual_returns(tickers), "deterministic simulated market data"
-
-
 def normalize_symbols(raw, max_count=12):
     if isinstance(raw, str):
         parts = raw.replace("\n", ",").replace(";", ",").split(",")
@@ -1621,64 +1299,6 @@ def normalize_symbols(raw, max_count=12):
         if symbol and symbol not in symbols:
             symbols.append(symbol)
     return symbols[:max_count]
-
-
-def simulated_ohlcv(symbol, period="6mo", interval="1d"):
-    if interval in {"1m", "2m", "5m", "15m", "30m"} or period == "1d":
-        minute_step = {"1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30}.get(interval, 1)
-        bars = max(16, min(390, 390 // minute_step))
-        rng = random.Random(sum(ord(c) for c in symbol) + bars + minute_step)
-        price = 80 + (sum(ord(c) for c in symbol) % 180)
-        rows = []
-        market_open = datetime.now().replace(hour=9, minute=30, second=0, microsecond=0)
-        for i in range(bars):
-            stamp = market_open.timestamp() + i * minute_step * 60
-            date = datetime.fromtimestamp(stamp).strftime("%Y-%m-%d %H:%M")
-            drift = rng.gauss(0.00008, 0.0028 * math.sqrt(minute_step))
-            open_price = price
-            close = open_price * (1 + drift)
-            high = max(open_price, close) * (1 + abs(rng.gauss(0.0008, 0.0007)))
-            low = min(open_price, close) * (1 - abs(rng.gauss(0.0008, 0.0007)))
-            volume = int(10_000 + rng.random() * 900_000)
-            rows.append(
-                {
-                    "date": date,
-                    "open": round(open_price, 4),
-                    "high": round(high, 4),
-                    "low": round(low, 4),
-                    "close": round(close, 4),
-                    "volume": volume,
-                }
-            )
-            price = close
-        return rows
-
-    days_map = {"5d": 5, "1mo": 22, "3mo": 66, "6mo": 132, "1y": 252, "2y": 504}
-    days = days_map.get(period, 132)
-    rng = random.Random(sum(ord(c) for c in symbol) + days)
-    price = 80 + (sum(ord(c) for c in symbol) % 180)
-    rows = []
-    for i in range(days):
-        date = datetime.fromtimestamp(time.time() - (days - i) * 86400).strftime("%Y-%m-%d")
-        gap = rng.gauss(0, 0.006)
-        drift = rng.gauss(0.0004, 0.018)
-        open_price = price * (1 + gap)
-        close = open_price * (1 + drift)
-        high = max(open_price, close) * (1 + abs(rng.gauss(0.006, 0.006)))
-        low = min(open_price, close) * (1 - abs(rng.gauss(0.006, 0.006)))
-        volume = int(1_000_000 + rng.random() * 12_000_000)
-        rows.append(
-            {
-                "date": date,
-                "open": round(open_price, 2),
-                "high": round(high, 2),
-                "low": round(low, 2),
-                "close": round(close, 2),
-                "volume": volume,
-            }
-        )
-        price = close
-    return rows
 
 
 def frame_to_ohlcv_rows(frame):
@@ -1729,7 +1349,7 @@ def market_chart_payload(symbols, period="6mo", interval="1d"):
         period = "1d"
     charts = {}
     quotes = []
-    source = "deterministic fallback"
+    source = "market data unavailable"
 
     if yf is not None:
         try:
@@ -1758,8 +1378,7 @@ def market_chart_payload(symbols, period="6mo", interval="1d"):
             charts = {}
 
     for symbol in symbols:
-        if symbol not in charts:
-            charts[symbol] = simulated_ohlcv(symbol, period=period, interval=interval)
+        charts.setdefault(symbol, [])
         rows = charts.get(symbol, [])
         last = rows[-1] if rows else {}
         prev = rows[-2] if len(rows) >= 2 else last
@@ -1790,27 +1409,6 @@ def market_chart_payload(symbols, period="6mo", interval="1d"):
         "active_ticker": next((symbol for symbol in symbols if charts.get(symbol)), symbols[0]),
         "quotes": quotes,
         "charts": charts,
-    }
-
-
-def etf_watchlist_payload():
-    symbols = []
-    for group_symbols in ETF_WATCHLIST.values():
-        for symbol in group_symbols:
-            if symbol not in symbols:
-                symbols.append(symbol)
-    market = market_chart_payload(symbols, period="1mo", interval="1d")
-    quote_lookup = {q["ticker"]: q for q in market["quotes"]}
-    rows = []
-    for group, group_symbols in ETF_WATCHLIST.items():
-        for symbol in group_symbols:
-            q = quote_lookup.get(symbol, {"ticker": symbol})
-            rows.append({**q, "group": group})
-    return {
-        "generated_at": market["generated_at"],
-        "source": market["source"],
-        "rows": rows,
-        "groups": ETF_WATCHLIST,
     }
 
 
@@ -2848,13 +2446,6 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
     climate_context = climate_data_context()
     climate_state = climate_state_variables(daily_signal=daily_signal, context=climate_context)
 
-    stock_scan = {}
-    if stock_symbols:
-        try:
-            stock_scan = {r["ticker"]: r for r in company_scan(stock_symbols)}
-        except Exception:
-            stock_scan = {}
-
     daily_pressure = safe_float(daily_signal.get("allocation_pressure"), 0.0)
     chronic_physical = clamp(
         0.50 * clamp((safe_float(climate_context.get("current_warming"), CURRENT_WARMING_C) - 0.75) / 0.85, 0, 1)
@@ -2875,21 +2466,18 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
         market_score = clamp(0.55 * momentum_score + 0.25 * liquidity_score + 0.20 * risk_score, 0.03, 0.97)
 
         if symbol in stock_symbols:
-            scan = stock_scan.get(symbol, {})
             asset_type = "Stock"
-            sector = normalize_model_sector(scan.get("sector") or guess_sector(symbol))
-            issuer_method2_p95 = safe_float(scan.get("method2_p95_pct"), 0.0)
+            sector = normalize_model_sector(guess_sector(symbol))
             climate_risk = COMPANY_SECTOR_SENSITIVITY.get(sector, 0.50)
             climate_score = clamp(1 - climate_risk, 0.05, 0.95)
             rationale = (
-                f"{sector}; issuer valuation P95 diagnostic {issuer_method2_p95:.2%}; "
+                f"{sector}; sector exposure mapped through the same conditional scenario engine; "
                 f"{'today momentum' if short_term else '3M trend'} {stats['period_return']:.2%}."
             )
         else:
             asset_type = "ETF"
             sector, climate_risk, note = etf_climate_profile(symbol)
             sector = normalize_model_sector(sector)
-            issuer_method2_p95 = None
             climate_score = clamp(1 - climate_risk, 0.05, 0.95)
             rationale = f"{sector}; {note} {'Today 1m trend' if short_term else '3M trend'} {stats['period_return']:.2%}."
 
@@ -2968,7 +2556,6 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
                 "scenario_tail_proxy": round(scenario_tail_proxy, 4),
                 "scenario_tail_scenarios": holding_tail.get("scenarios", []),
                 "scenario_tail_definition": holding_tail.get("definition"),
-                "issuer_method2_p95_diagnostic": round(issuer_method2_p95, 4) if issuer_method2_p95 is not None else None,
                 "raw_weight": max(0.002, clamp(total_score, 0.01, 0.99) ** 1.35),
                 "rationale": f"{rationale} {attribution}",
             }
@@ -3223,28 +2810,6 @@ def climate_relation_score(exposure, daily_signal):
     return round(clamp(relation, 0.0, 1.0), 4)
 
 
-def daily_climate_action(stance, relation, momentum):
-    relation = safe_float(relation, 0.0)
-    momentum = safe_float(momentum, 0.0)
-    if relation < 0.12:
-        return "Low signal / monitor"
-    if stance == "beneficiary":
-        if relation >= 0.34 and momentum >= 0:
-            return "Daily buy candidate"
-        return "Watch for entry"
-    if stance == "hedge":
-        return "Hedge candidate" if relation >= 0.26 else "Keep as hedge"
-    if stance == "risk":
-        if relation >= 0.38:
-            return "Reduce / hedge"
-        return "Risk watch"
-    if relation >= 0.38 and momentum >= 0:
-        return "Selective overweight"
-    if relation >= 0.28:
-        return "Hold with hedge"
-    return "Monitor"
-
-
 def category_reminder(category):
     reminders = {
         "heat": "Power demand, utilities, data centers, solar, and grid stress.",
@@ -3298,76 +2863,9 @@ def daily_climate_alert_rows(daily_signal):
     return sorted(rows, key=lambda r: (r["intensity"], r["count"]), reverse=True)
 
 
-def daily_market_lookup(symbols):
-    market = market_chart_payload(symbols, period="1d", interval="1m")
-    charts = market.get("charts", {})
-    return market, {symbol: market_stats(charts.get(symbol, [])) for symbol in symbols}
-
-
-def daily_climate_stock_recommendations(daily_signal):
-    ranked = []
-    for item in DAILY_CLIMATE_STOCKS:
-        relation = climate_relation_score(item.get("exposure", {}), daily_signal)
-        ranked.append((relation, item))
-    ranked = sorted(ranked, key=lambda x: x[0], reverse=True)[:10]
-    symbols = [item["ticker"] for _, item in ranked]
-    market, stats_lookup = daily_market_lookup(symbols)
-    rows = []
-    for relation, item in ranked:
-        stats = stats_lookup.get(item["ticker"], {})
-        momentum = safe_float(stats.get("period_return"), 0.0)
-        rows.append(
-            {
-                "ticker": item["ticker"],
-                "name": item["name"],
-                "theme": item["theme"],
-                "stance": item["stance"],
-                "relation_score": relation,
-                "last": round(safe_float(stats.get("last"), 0.0), 4),
-                "today_return": round(momentum, 5),
-                "volatility": round(safe_float(stats.get("volatility"), 0.0), 5),
-                "action": daily_climate_action(item["stance"], relation, momentum),
-                "climate_link": item["note"],
-            }
-        )
-    return rows, market
-
-
-def daily_climate_etf_recommendations(daily_signal):
-    ranked = []
-    for item in DAILY_CLIMATE_ETFS:
-        relation = climate_relation_score(item.get("exposure", {}), daily_signal)
-        ranked.append((relation, item))
-    ranked = sorted(ranked, key=lambda x: x[0], reverse=True)[:10]
-    symbols = [item["ticker"] for _, item in ranked]
-    market, stats_lookup = daily_market_lookup(symbols)
-    rows = []
-    for relation, item in ranked:
-        stats = stats_lookup.get(item["ticker"], {})
-        group, climate_risk, note = etf_climate_profile(item["ticker"])
-        momentum = safe_float(stats.get("period_return"), 0.0)
-        rows.append(
-            {
-                "ticker": item["ticker"],
-                "group": group,
-                "role": item["role"],
-                "stance": item["stance"],
-                "relation_score": relation,
-                "climate_risk": round(climate_risk, 4),
-                "last": round(safe_float(stats.get("last"), 0.0), 4),
-                "today_return": round(momentum, 5),
-                "action": daily_climate_action(item["stance"], relation, momentum),
-                "climate_link": note,
-            }
-        )
-    return rows, market
-
-
 def daily_climate_board_payload():
     daily_signal = load_daily_climate_signal()
     alert_rows = daily_climate_alert_rows(daily_signal)
-    stock_rows, stock_market = daily_climate_stock_recommendations(daily_signal)
-    etf_rows, etf_market = daily_climate_etf_recommendations(daily_signal)
     active_themes = [r["driver_label"] for r in alert_rows[:4]]
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -3379,24 +2877,8 @@ def daily_climate_board_payload():
         "daily_pressure": daily_signal.get("daily_pressure", 0.0),
         "allocation_pressure": daily_signal.get("allocation_pressure", 0.0),
         "active_themes": active_themes,
-        "market_source": stock_market.get("source") or etf_market.get("source"),
-        "market_interval": stock_market.get("interval") or etf_market.get("interval"),
-        "stock_recommendations": stock_rows,
-        "etf_recommendations": etf_rows,
         "daily_alerts": alert_rows,
     }
-
-
-def simulated_annual_returns(tickers):
-    rng = random.Random(42)
-    annual = {t: {} for t in tickers}
-    for year in range(START_YEAR + 1, datetime.now().year + 1):
-        market = rng.gauss(0.08, 0.13)
-        for t in tickers:
-            beta = {"XLE": 1.15, "XLU": 0.65, "XLI": 1.05, "XLK": 1.18, "XLF": 1.10}.get(t, 1)
-            tilt = {"XLE": -0.005, "XLU": 0.012, "XLI": 0.003, "XLK": 0.025, "XLF": 0.006}.get(t, 0)
-            annual[t][str(year)] = round(market * beta + tilt + rng.gauss(0, 0.06), 5)
-    return annual
 
 
 def extract_close_series(data, symbol, symbols):
@@ -3435,83 +2917,6 @@ def extract_close_series(data, symbol, symbols):
     return None
 
 
-def fetch_annual_market_returns(tickers, cache_name="optimizer_backtest_returns_cache.json", start=f"{START_YEAR}-01-01"):
-    symbols = []
-    for raw in tickers:
-        symbol = yahoo_symbol(raw)
-        if symbol and symbol not in symbols:
-            symbols.append(symbol)
-    if not symbols:
-        return {}, "no symbols"
-
-    cache = DATA_DIR / cache_name
-    annual = {}
-    source = None
-    if yf is not None:
-        try:
-            data = yf.download(symbols, start=start, auto_adjust=True, progress=False, threads=True)
-            if data is not None and not data.empty:
-                for symbol in symbols:
-                    series = extract_close_series(data, symbol, symbols)
-                    if series is None and len(symbols) == 1 and "Close" in data:
-                        series = data["Close"]
-                    if series is None or not hasattr(series, "dropna"):
-                        continue
-                    series = series.dropna()
-                    if len(series) > 30 and hasattr(series, "resample"):
-                        yearly = series.resample("YE").last().pct_change().dropna()
-                        if len(yearly):
-                            annual[symbol] = {str(idx.year): round(float(v), 5) for idx, v in yearly.items()}
-                if annual:
-                    cache.write_text(json.dumps(annual, indent=2), encoding="utf-8")
-                    source = "yfinance historical annual returns"
-        except Exception:
-            annual = {}
-
-    if not annual and cache.exists():
-        try:
-            cached = json.loads(cache.read_text(encoding="utf-8"))
-            annual = {symbol: cached.get(symbol, {}) for symbol in symbols if cached.get(symbol)}
-            if annual:
-                source = "cached historical annual returns"
-        except Exception:
-            annual = {}
-
-    simulated = simulated_annual_returns(symbols)
-    missing = [symbol for symbol in symbols if not annual.get(symbol)]
-    for symbol in missing:
-        annual[symbol] = simulated.get(symbol, {})
-    if missing:
-        source = (source + " plus deterministic fallback") if source else "deterministic simulated market data"
-    return annual, source or "deterministic simulated market data"
-
-
-def read_cached_daily_recommendation_backtest(max_age_hours=8):
-    if DAILY_RECO_BACKTEST_CACHE.exists():
-        age_hours = (time.time() - DAILY_RECO_BACKTEST_CACHE.stat().st_mtime) / 3600
-        if age_hours <= max_age_hours:
-            try:
-                cached = json.loads(DAILY_RECO_BACKTEST_CACHE.read_text(encoding="utf-8"))
-                cached["source"] = cached.get("source", "cached daily recommendation backtest")
-                return cached
-            except Exception:
-                pass
-    return None
-
-
-def daily_recommendation_symbols():
-    symbols = []
-    for item in DAILY_CLIMATE_STOCKS:
-        ticker = yahoo_symbol(item.get("ticker"))
-        if ticker and ticker not in symbols:
-            symbols.append(ticker)
-    for ticker in DEFAULT_OPTIMIZER_STOCKS:
-        symbol = yahoo_symbol(ticker)
-        if symbol and symbol not in symbols:
-            symbols.append(symbol)
-    return symbols[:16]
-
-
 def daily_stock_meta(symbol):
     for item in DAILY_CLIMATE_STOCKS:
         if yahoo_symbol(item.get("ticker")) == symbol:
@@ -3543,7 +2948,7 @@ def daily_stock_meta(symbol):
 def fetch_daily_close_history(symbols, period="3y"):
     symbols = [yahoo_symbol(s) for s in symbols if yahoo_symbol(s)]
     prices = {symbol: {} for symbol in symbols}
-    source = "deterministic simulated daily closes"
+    source = "market data unavailable"
     if yf is not None:
         try:
             data = yf.download(symbols, period=period, interval="1d", auto_adjust=True, progress=False, threads=True)
@@ -3565,46 +2970,10 @@ def fetch_daily_close_history(symbols, period="3y"):
         except Exception:
             prices = {symbol: {} for symbol in symbols}
 
-    if not any(prices.values()):
-        days = 820
-        for symbol in symbols:
-            rng = random.Random(sum(ord(c) for c in symbol) + 3200)
-            price = 55 + (sum(ord(c) for c in symbol) % 220)
-            for i in range(days):
-                stamp = time.time() - (days - i) * 86400
-                dt = datetime.fromtimestamp(stamp)
-                if dt.weekday() >= 5:
-                    continue
-                beta = 0.85 + (sum(ord(c) for c in symbol) % 45) / 100
-                drift = rng.gauss(0.00042, 0.014 * beta)
-                price = max(3, price * (1 + drift))
-                prices[symbol][dt.strftime("%Y-%m-%d")] = round(price, 4)
-    else:
-        simulated = fetch_daily_close_history_fallback(symbols)
-        for symbol in symbols:
-            if len(prices.get(symbol, {})) < 80:
-                prices[symbol] = simulated.get(symbol, {})
-                source += " plus deterministic fallback"
+    covered = sum(1 for values in prices.values() if len(values) >= 80)
+    if covered:
+        source = f"{source} | {covered}/{len(symbols)} securities with at least 80 observations"
     return prices, source
-
-
-def fetch_daily_close_history_fallback(symbols):
-    prices = {}
-    days = 820
-    for symbol in symbols:
-        rng = random.Random(sum(ord(c) for c in symbol) + 3200)
-        price = 55 + (sum(ord(c) for c in symbol) % 220)
-        prices[symbol] = {}
-        for i in range(days):
-            stamp = time.time() - (days - i) * 86400
-            dt = datetime.fromtimestamp(stamp)
-            if dt.weekday() >= 5:
-                continue
-            beta = 0.85 + (sum(ord(c) for c in symbol) % 45) / 100
-            drift = rng.gauss(0.00042, 0.014 * beta)
-            price = max(3, price * (1 + drift))
-            prices[symbol][dt.strftime("%Y-%m-%d")] = round(price, 4)
-    return prices
 
 
 def trailing_returns_for_symbol(price_map, dates, idx, lookback=20):
@@ -3717,58 +3086,6 @@ def walk_forward_adjusted_score(score, style="balanced", horizon="long"):
         0.01,
         0.99,
     )
-
-
-def build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_n=5):
-    date_sets = [set(p.keys()) for p in prices.values() if p]
-    if not date_sets:
-        return []
-    common_dates = sorted(set.intersection(*date_sets)) if len(date_sets) == len(symbols) else []
-    all_dates = sorted(set.union(*date_sets))
-    dates = common_dates if len(common_dates) >= 120 else all_dates
-    rows = []
-    for idx in range(25, len(dates) - 1):
-        scored = []
-        available = []
-        for symbol in symbols:
-            price_map = prices.get(symbol, {})
-            current = price_map.get(dates[idx])
-            nxt = price_map.get(dates[idx + 1])
-            if not current or not nxt:
-                continue
-            score = score_daily_recommendation(symbol, prices, dates, idx, climate_rows)
-            if score:
-                scored.append(score)
-                available.append(symbol)
-        if len(scored) < 4:
-            continue
-        picks = sorted(scored, key=lambda r: r["score"], reverse=True)[:top_n]
-        pick_symbols = [p["ticker"] for p in picks]
-        model_returns = []
-        bench_returns = []
-        for symbol in available:
-            current = prices[symbol].get(dates[idx])
-            nxt = prices[symbol].get(dates[idx + 1])
-            ret = nxt / current - 1 if current and nxt else 0.0
-            bench_returns.append(ret)
-            if symbol in pick_symbols:
-                model_returns.append(ret)
-        if not model_returns or not bench_returns:
-            continue
-        rows.append(
-            {
-                "date": dates[idx + 1],
-                "signal_date": dates[idx],
-                "recommended_return": round(sum(model_returns) / len(model_returns), 5),
-                "benchmark_return": round(sum(bench_returns) / len(bench_returns), 5),
-                "return_difference": round(sum(model_returns) / len(model_returns) - sum(bench_returns) / len(bench_returns), 5),
-                "picks": ", ".join(pick_symbols),
-                "top_drivers": "; ".join(p["driver"] for p in picks[:3]),
-                "pick_details": picks,
-                "coverage": f"{len(available)} / {len(symbols)}",
-            }
-        )
-    return rows
 
 
 def build_walk_forward_buy_sell_backtest_rows(
@@ -3892,87 +3209,6 @@ def build_walk_forward_buy_sell_backtest_rows(
     return rows
 
 
-def build_portfolio_selection_backtest_rows(portfolio_rows, prices):
-    selected = []
-    for row in portfolio_rows or []:
-        ticker = row.get("ticker")
-        weight = safe_float(row.get("target_weight"), 0.0)
-        if ticker and weight > 0:
-            selected.append(
-                {
-                    "ticker": ticker,
-                    "weight": weight,
-                    "asset_type": row.get("asset_type", ""),
-                    "sector": row.get("sector", ""),
-                    "action": row.get("action", ""),
-                    "driver": row.get("rationale", ""),
-                }
-            )
-    if not selected:
-        return []
-
-    total_weight = sum(item["weight"] for item in selected) or 1.0
-    for item in selected:
-        item["weight"] = item["weight"] / total_weight
-
-    date_sets = [set(prices.get(item["ticker"], {}).keys()) for item in selected if prices.get(item["ticker"])]
-    if not date_sets:
-        return []
-    common_dates = sorted(set.intersection(*date_sets)) if len(date_sets) == len(selected) else []
-    all_dates = sorted(set.union(*date_sets))
-    dates = common_dates if len(common_dates) >= 120 else all_dates
-    rows = []
-    for idx in range(1, len(dates)):
-        model_returns = []
-        bench_returns = []
-        covered = []
-        for item in selected:
-            price_map = prices.get(item["ticker"], {})
-            prev = price_map.get(dates[idx - 1])
-            cur = price_map.get(dates[idx])
-            if not prev or not cur:
-                continue
-            ret = cur / prev - 1
-            model_returns.append(ret * item["weight"])
-            bench_returns.append(ret)
-            covered.append(item)
-        if not model_returns or not bench_returns:
-            continue
-        portfolio_return = sum(model_returns)
-        benchmark_return = sum(bench_returns) / len(bench_returns)
-        rows.append(
-            {
-                "date": dates[idx],
-                "signal_date": dates[idx - 1],
-                "recommended_return": round(portfolio_return, 5),
-                "benchmark_return": round(benchmark_return, 5),
-                "return_difference": round(portfolio_return - benchmark_return, 5),
-                "picks": ", ".join(item["ticker"] for item in covered),
-                "top_drivers": "; ".join(
-                    f"{item['ticker']} {item['weight']:.1%} {item['action']}".strip() for item in covered[:4]
-                ),
-                "pick_details": [
-                    {
-                        "ticker": item["ticker"],
-                        "name": item["ticker"],
-                        "sector": item.get("sector", ""),
-                        "theme": item.get("asset_type", ""),
-                        "stance": item.get("action", ""),
-                        "score": item["weight"],
-                        "market_score": 0,
-                        "climate_resilience": 0,
-                        "transition_risk": 0,
-                        "momentum_20d": 0,
-                        "driver": item.get("driver", ""),
-                    }
-                    for item in covered
-                ],
-                "coverage": f"{len(covered)} / {len(selected)}",
-            }
-        )
-    return rows
-
-
 def max_drawdown_from_returns(returns):
     wealth = 1.0
     values = []
@@ -4038,116 +3274,85 @@ def summarize_daily_recommendation_window(rows, window_days, label):
 
 
 def daily_recommendation_backtest_payload(
-    force_refresh=False,
     mode=None,
     capital=None,
     horizon=None,
     style=None,
     etfs="",
     stocks="",
-    use_portfolio=False,
     trading_cost_bps=10.0,
     annual_borrow_cost_bps=100.0,
 ):
-    if use_portfolio:
-        optimizer = portfolio_optimizer_payload(
-            mode=mode or "etf_stock",
-            capital=capital or DEFAULT_PORTFOLIO_VALUE,
-            horizon=horizon or "long",
-            style=style or "balanced",
-            etfs=etfs or "",
-            stocks=stocks or "",
-        )
-        selected_rows = optimizer.get("rows", [])
-        symbols = [r["ticker"] for r in selected_rows if r.get("ticker")]
-        prices, source = fetch_daily_close_history(symbols, period="3y")
-        climate_rows = climate_signal()
-        rows = build_walk_forward_buy_sell_backtest_rows(
-            symbols,
-            prices,
-            climate_rows,
-            style=style or "balanced",
-            horizon=horizon or "long",
-            trading_cost_bps=trading_cost_bps,
-            annual_borrow_cost_bps=annual_borrow_cost_bps,
-        )
-        windows = {
-            "3w": summarize_daily_recommendation_window(rows, 15, "3 weeks"),
-            "3m": summarize_daily_recommendation_window(rows, 63, "3 months"),
-            "3y": summarize_daily_recommendation_window(rows, 756, "3 years"),
-        }
-        return {
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "source": source,
-            "universe": symbols,
-            "backtest_type": "climate_walk_forward_buy_sell",
-            "cost_model": {
-                "trading_cost_bps": round(clamp(safe_float(trading_cost_bps, 10.0), 0.0, 100.0), 2),
-                "annual_borrow_cost_bps": round(clamp(safe_float(annual_borrow_cost_bps, 100.0), 0.0, 2_000.0), 2),
-                "return_basis": "Net of modeled trading and borrow costs",
-                "turnover_definition": "Half the sum of absolute position-weight changes; costs use full traded notional.",
-                "benchmark_definition": "75% equal-weight selected universe plus 25% zero-return cash, matched to the signal portfolio's 75% net risky exposure.",
-            },
-            "portfolio_context": {
-                "mode": optimizer.get("mode"),
-                "mode_label": optimizer.get("mode_label"),
-                "style": optimizer.get("style"),
-                "style_label": optimizer.get("style_label"),
-                "horizon": optimizer.get("horizon"),
-                "horizon_label": optimizer.get("horizon_label"),
-                "capital": optimizer.get("capital"),
-                "universe_mode": optimizer.get("universe_mode"),
-                "selected_count": len(selected_rows),
-                "selected_tickers": symbols,
-            },
-            "methodology": {
-                "model": "Daily walk-forward climate buy/sell overlay using the current optimizer universe.",
-                "selection": "For each historical signal date, the model uses prior market observations and the latest completed calendar-year climate vintage, buys the strongest climate-beneficiary/resilience bucket, and shorts the highest climate-vulnerability bucket for the next trading day.",
-                "windows": "3 weeks, 3 months, and 3 years are recalculated from daily signal returns; the current portfolio is not used retroactively.",
-                "costs": "Net returns deduct the selected trading cost from full traded notional and the selected annualized borrow cost from the 25% short sleeve.",
-                "benchmark": "The comparator is exposure matched: 75% equal-weight universe and 25% cash, because the 100% long / 25% short signal has 75% net risky exposure.",
-                "caveat": "The test is a conditional historical replay of today's selected universe, not a survivorship-free constituent history. Annual climate features use expanding-window normalization and a one-year publication lag; a complete archived daily NWS tape is not reconstructed. Slippage, taxes, financing, and market-impact constraints remain excluded.",
-            },
-            "windows": windows,
-        }
-
-    if not force_refresh:
-        cached = read_cached_daily_recommendation_backtest()
-        if cached:
-            return cached
-    symbols = daily_recommendation_symbols()
+    optimizer = portfolio_optimizer_payload(
+        mode=mode or "etf_stock",
+        capital=capital or DEFAULT_PORTFOLIO_VALUE,
+        horizon=horizon or "long",
+        style=style or "balanced",
+        etfs=etfs or "",
+        stocks=stocks or "",
+    )
+    selected_rows = optimizer.get("rows", [])
+    symbols = [r["ticker"] for r in selected_rows if r.get("ticker")]
     prices, source = fetch_daily_close_history(symbols, period="3y")
     climate_rows = climate_signal()
-    rows = build_daily_recommendation_backtest_rows(symbols, prices, climate_rows, top_n=5)
+    rows = build_walk_forward_buy_sell_backtest_rows(
+        symbols,
+        prices,
+        climate_rows,
+        style=style or "balanced",
+        horizon=horizon or "long",
+        trading_cost_bps=trading_cost_bps,
+        annual_borrow_cost_bps=annual_borrow_cost_bps,
+    )
+    covered_securities = sum(1 for values in prices.values() if len(values) >= 80)
     windows = {
         "3w": summarize_daily_recommendation_window(rows, 15, "3 weeks"),
         "3m": summarize_daily_recommendation_window(rows, 63, "3 months"),
         "3y": summarize_daily_recommendation_window(rows, 756, "3 years"),
     }
-    payload = {
+    return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "source": source,
+        "data_status": "ready" if rows else "insufficient_history",
+        "covered_securities": covered_securities,
+        "requested_securities": len(symbols),
         "universe": symbols,
+        "backtest_type": "climate_walk_forward_buy_sell",
+        "cost_model": {
+            "trading_cost_bps": round(clamp(safe_float(trading_cost_bps, 10.0), 0.0, 100.0), 2),
+            "annual_borrow_cost_bps": round(clamp(safe_float(annual_borrow_cost_bps, 100.0), 0.0, 2_000.0), 2),
+            "return_basis": "Net of modeled trading and borrow costs",
+            "turnover_definition": "Half the sum of absolute position-weight changes; costs use full traded notional.",
+            "benchmark_definition": "75% equal-weight selected universe plus 25% zero-return cash, matched to the signal portfolio's 75% net risky exposure.",
+        },
+        "portfolio_context": {
+            "mode": optimizer.get("mode"),
+            "mode_label": optimizer.get("mode_label"),
+            "style": optimizer.get("style"),
+            "style_label": optimizer.get("style_label"),
+            "horizon": optimizer.get("horizon"),
+            "horizon_label": optimizer.get("horizon_label"),
+            "capital": optimizer.get("capital"),
+            "universe_mode": optimizer.get("universe_mode"),
+            "selected_count": len(selected_rows),
+            "selected_tickers": symbols,
+        },
         "methodology": {
-            "model": "Daily walk-forward stock recommendation using prior 20-day market trend, volatility, official annual climate pressure, and sector physical/transition risk.",
-            "selection": "Each signal day selects the top five stocks; the next trading day return is compared with an equal-weight universe benchmark.",
-            "windows": "3 weeks, 3 months, and 3 years are recalculated from daily model returns.",
-            "caveat": "Historical NWS alert archives are not used here; live NWS is used for today's recommendation, while history uses official annual climate pressure plus sector source proxies.",
+            "model": "Daily walk-forward climate buy/sell overlay using the current optimizer universe.",
+            "selection": "For each historical signal date, the model uses prior market observations and the latest completed calendar-year climate vintage, buys the strongest climate-beneficiary/resilience bucket, and shorts the highest climate-vulnerability bucket for the next trading day.",
+            "windows": "3 weeks, 3 months, and 3 years are recalculated from daily signal returns; the current portfolio is not used retroactively.",
+            "costs": "Net returns deduct the selected trading cost from full traded notional and the selected annualized borrow cost from the 25% short sleeve.",
+            "benchmark": "The comparator is exposure matched: 75% equal-weight universe and 25% cash, because the 100% long / 25% short signal has 75% net risky exposure.",
+            "caveat": "The test is a conditional historical replay of today's selected universe, not a survivorship-free constituent history. Annual climate features use expanding-window normalization and a one-year publication lag; a complete archived daily NWS tape is not reconstructed. Slippage, taxes, financing, and market-impact constraints remain excluded.",
         },
         "windows": windows,
     }
-    try:
-        DAILY_RECO_BACKTEST_CACHE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-    return payload
 
 
 def build_allocation_history():
     tickers = list(SECTOR_ETFS.keys())
     climate_rows = climate_signal()
-    returns, source = fetch_etf_prices(tickers)
-    years = sorted({int(y) for t in returns.values() for y in t.keys() if int(y) >= START_YEAR})
+    years = list(range(START_YEAR + 1, datetime.now().year + 1))
     allocation_rows = []
     for year in years:
         regime = regime_for_year(year, climate_rows)
@@ -4166,7 +3371,7 @@ def build_allocation_history():
                     "sector_note": SECTOR_ETFS[ticker]["client_note"],
                 }
             )
-    return allocation_rows, source
+    return allocation_rows, "official climate vintages; no market-return input"
 
 
 def allocation_action(weight, benchmark):
@@ -4186,78 +3391,6 @@ def max_drawdown(values):
         if peak > 0:
             worst = min(worst, v / peak - 1)
     return worst
-
-
-def company_scan(tickers):
-    climate_rows = climate_signal()
-    latest_score = climate_rows[-1]["climate_risk_score"]
-    context = climate_data_context()
-    pressure = max(0.02, min(0.24, (0.06 + latest_score * 0.025) * context["climate_pressure_multiplier"]))
-    out = []
-    for raw in tickers:
-        ticker = yahoo_symbol(raw)
-        if not ticker:
-            continue
-        info = {}
-        returns = []
-        source = "fallback"
-        if yf is not None:
-            try:
-                tk = yf.Ticker(ticker)
-                info = tk.info or {}
-                hist = tk.history(period="3y", auto_adjust=True)
-                if hist is not None and not hist.empty:
-                    returns = hist["Close"].pct_change().dropna().tolist()
-                    source = "yfinance"
-            except Exception:
-                info = {}
-        if not returns:
-            rng = random.Random(sum(ord(c) for c in ticker))
-            returns = [rng.gauss(0.0004, 0.018) for _ in range(650)]
-        sorted_ret = sorted(returns)
-        tail_n = max(1, int(len(sorted_ret) * 0.05))
-        market_cvar = sum(sorted_ret[:tail_n]) / tail_n
-        sector = info.get("sector") or guess_sector(ticker)
-        sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, 0.50)
-        market_cap = safe_float(info.get("marketCap"), fallback_market_cap(ticker))
-        beta = safe_float(info.get("beta"), 1.0)
-        method2 = method2_company_cvor(ticker, info=info)
-        out.append(
-            {
-                "ticker": ticker,
-                "company": info.get("shortName") or info.get("longName") or ticker,
-                "sector": sector,
-                "market_cap": round(market_cap, 2),
-                "beta": round(beta, 3),
-                "market_cvar_95": round(market_cvar, 5),
-                "climate_pressure": round(pressure, 4),
-                "sector_sensitivity": round(sensitivity, 3),
-                "source": source,
-                "method2_mean_pct": method2["method2_mean_pct"],
-                "method2_p95_pct": method2["method2_p95_pct"],
-                "method2_p99_pct": method2["method2_p99_pct"],
-                "method2_cvor95_pct": method2["method2_cvor95_pct"],
-                "method2_cvor95_dollars": method2["method2_cvor95_dollars"],
-                "method2_2c_p95_pct": method2["method2_2c_p95_pct"],
-                "method2_2c_p99_pct": method2["method2_2c_p99_pct"],
-                "method2_2c_cvor95_pct": method2["method2_2c_cvor95_pct"],
-                "method2_2c_cvor95_dollars": method2["method2_2c_cvor95_dollars"],
-                "method2_p95_reduction_pct": method2["method2_p95_reduction_pct"],
-                "method2_cvor95_reduction_pct": method2["method2_cvor95_reduction_pct"],
-                "method2_discount_rate": method2["method2_discount_rate"],
-                "method2_draws": method2["method2_draws"],
-                "method2_current_warming": method2["method2_current_warming"],
-                "method2_climate_data_year": method2["method2_climate_data_year"],
-                "method2_co2_ppm": method2["method2_co2_ppm"],
-                "method2_disaster_10y_avg": method2["method2_disaster_10y_avg"],
-                "method2_climate_source_mode": method2["method2_climate_source_mode"],
-                "method2_data_quality_score": method2["method2_data_quality_score"],
-                "method2_data_quality_label": method2["method2_data_quality_label"],
-                "method2_data_quality_notes": method2["method2_data_quality_notes"],
-                "action": issuer_action(market_cvar, sensitivity, beta, method2["method2_p95_pct"]),
-            }
-        )
-    return out
 
 
 def guess_sector(ticker):
@@ -4283,23 +3416,6 @@ def guess_sector(ticker):
         "TSLA": "Consumer Cyclical",
     }
     return mapping.get(ticker, "Technology")
-
-
-def fallback_market_cap(ticker):
-    base = 80_000_000_000
-    return base * (1 + (sum(ord(c) for c in ticker) % 25))
-
-
-def issuer_action(cvar, sensitivity, beta, climate_loss_ratio=0.0):
-    if climate_loss_ratio >= 0.10:
-        return "Reduce / hedge climate concentration"
-    if sensitivity >= 0.75 and beta >= 1.1:
-        return "High modeled climate-loss watchlist"
-    if cvar < -0.035:
-        return "Market-tail risk elevated"
-    if sensitivity <= 0.40:
-        return "Relatively adaptive exposure"
-    return "Monitor with sector overlay"
 
 
 def build_payload():
@@ -4332,18 +3448,6 @@ def build_payload():
             "valuation": "Scenario-conditioned cash flows are discounted into an as-of-date value impact relative to a chosen reference scenario.",
             "probability": "No occurrence probabilities are assigned to NGFS-style scenarios.",
             "short_term": "NWS alerts affect event selection risk and tactical portfolio basis points, not long-run scenario probability.",
-        },
-        "method2_methodology": {
-            "paper": "Dietz, Bowen, Dixon and Gradwell (2016), 'Climate value at risk' of global financial assets",
-            "equation": "Climate VaR = PV(no-damage cash-flow growth path) - PV(climate-damaged cash-flow growth path), divided by PV(no-damage path).",
-            "implementation": "Company-level approximation using U.S. issuer sector sensitivity, beta, market cap, cash-flow growth proxy, DICE-style damage function, and Monte Carlo uncertainty.",
-            "draws": METHOD2_DRAWS,
-            "discount_rate": METHOD2_DISCOUNT_RATE,
-            "horizon": METHOD2_END_YEAR,
-            "damage_function": "g(T)=0.0028*T^2+(alpha3*T)^7, with alpha3 sampled from 0 to 0.248.",
-            "scenario_comparison": "Each issuer is evaluated under a BAU warming path and a 2C mitigation path. The 2C column excludes mitigation costs and shows climate-impact risk reduction.",
-            "tail_measure": "Tail mean 95 is the arithmetic mean of simulated valuation losses at or above the empirical 95th percentile. It is not the separate worst-two scenario-tail metric.",
-            "climate_data_upgrade": "NASA current warming sets the valuation path's observed starting point. NOAA CO2, NCEI disasters, and NWS alerts remain in their separate transition, chronic, and tactical modules rather than scaling this Method 2 path again.",
         },
         "portfolio_value": DEFAULT_PORTFOLIO_VALUE,
         "latest_regime": latest_regime,
@@ -4409,7 +3513,7 @@ HTML = r"""<!doctype html>
     table{width:100%;border-collapse:collapse;min-width:860px}
     #quoteTable{min-width:100%;table-layout:auto}
     #quoteTable th,#quoteTable td{padding:9px 7px;font-size:12px;white-space:nowrap}
-    #allocationTable,#dailyStockTable,#dailyEtfRecoTable,#dailyAlertTable,#scenarioTable,#climateDataTable,#etfTable,#companyTable,#detailTable,#dailyImpactTable{min-width:860px}
+    #allocationTable,#dailyAlertTable,#scenarioTable,#climateDataTable,#dailyImpactTable{min-width:860px}
     #optimizerTable{min-width:1320px}
     th,td{padding:8px;border-bottom:1px solid #edf1f7;text-align:left;vertical-align:top}
     th{font-size:12px;color:#52627c;background:#fbfcff}
@@ -4453,12 +3557,6 @@ HTML = r"""<!doctype html>
     .side-nav{display:grid;gap:6px;margin-bottom:12px}
     .side-nav a{display:flex;align-items:center;justify-content:space-between;text-decoration:none;color:#25324a;border:1px solid #dbe3ef;border-radius:7px;padding:8px 9px;background:#fbfdff;font-weight:750}
     .side-nav a:hover{border-color:#9bbcff;background:#f3f7ff}
-    .heat-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px}
-    .heat-cell{border:1px solid #dbe3ef;border-radius:7px;padding:8px;background:#fff;min-height:58px}
-    .heat-cell .top{display:flex;align-items:center;justify-content:space-between;font-weight:850}
-    .heat-cell .sub{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .heat-cell.pos{background:#eefdf6;border-color:#b9f2d3}
-    .heat-cell.neg{background:#fff2f1;border-color:#ffc8c2}
     .risk-meter{height:8px;border-radius:999px;background:#edf2f7;overflow:hidden;margin-top:6px}
     .risk-meter span{display:block;height:100%;border-radius:999px;background:#2563eb}
     .risk-meter span.warn{background:#b66a00}
@@ -4528,7 +3626,7 @@ HTML = r"""<!doctype html>
     aside{top:60px;height:calc(100vh - 60px);padding:25px 18px 30px 0;background:transparent;border:0;border-right:1px solid var(--line);border-radius:0}
     main{gap:24px;padding-top:24px}
     #summary-section{order:1}#client-section{order:2}#optimizer-section{order:3}#model-lab-section{order:4}
-    #cvor-section{order:5}#daily-reco-backtest-section{order:6}#climate-data-section{order:7}#issuer-section{order:8}
+    #cvor-section{order:5}#daily-reco-backtest-section{order:6}#climate-data-section{order:7}
     .side-nav{gap:2px;margin:0 0 26px}
     .side-nav a{min-height:36px;padding:8px 9px;border:0;border-left:2px solid transparent;border-radius:0;background:transparent;color:#3c3e39;font-size:11px;font-weight:700}
     .side-nav a span{color:#92948d;font-size:9px;text-transform:uppercase}
@@ -4595,17 +3693,15 @@ HTML = r"""<!doctype html>
     .metric-strip{gap:7px;padding-bottom:8px}
     .metric-strip .signal-card{flex-basis:170px}
     canvas{border:1px solid var(--line);border-radius:2px}
-    .source-card,.heat-cell{border-radius:2px}
-    .heat-cell.pos{background:#f0fff8}.heat-cell.neg{background:#fff4f6}
+    .source-card{border-radius:2px}
     .split-table>div{min-width:0;overflow:auto}
     .section-title{font-size:11px;text-transform:uppercase;margin:6px 0 8px}
     .disclosure-line{font-size:10px;color:var(--muted);padding:9px 0;border-top:1px solid var(--line)}
-    .issuer-controls{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:7px;align-items:end;max-width:650px;margin-bottom:12px}
     .technical-details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
     .technical-details summary{cursor:pointer;font-weight:800;font-size:11px;text-transform:uppercase}
     @media (max-width:1320px){.risk-budget-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.decision-grid{grid-template-columns:1fr 1fr}.institution-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.control-wide{grid-column:span 1}}
     @media (max-width:1100px){header{position:sticky}.layout{grid-template-columns:1fr;padding:0 14px 30px;gap:12px}aside{position:relative;top:0;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:10px 0}.side-nav{display:flex;overflow-x:auto;margin:0}.side-nav a{flex:0 0 auto;border-left:0;border-bottom:2px solid transparent}.side-nav a:hover{border-left:0;border-bottom-color:var(--electric)}.side-block{display:none}main{padding-top:10px}.grid.kpi{grid-template-columns:repeat(3,minmax(0,1fr))}.client-summary{grid-template-columns:1fr}.institution-controls{grid-template-columns:1fr 1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.split-table,.lab-split{grid-template-columns:1fr}.lab-column+.lab-column{padding-left:0;border-left:0}.panel-head>span:last-child{max-width:48%}}
-    @media (max-width:640px){header{padding:0 12px;min-height:54px}header .badge:not(#timeBadge){display:none}h1{font-size:13px}.layout{padding:0 10px 24px}.grid.kpi{grid-template-columns:1fr 1fr}.kpi-card{min-height:76px}.decision-grid,.risk-budget-grid,.institution-controls,.model-lab-controls,.lab-kpi{grid-template-columns:1fr}.grid.two,.grid.three,.grid.four{grid-template-columns:1fr}.method-flow{grid-template-columns:1fr}.method-step{border-right:0;border-bottom:1px solid var(--line)}.panel-head{align-items:flex-start;gap:10px}.panel-head>span:last-child{font-size:8px}.client-callout .headline{font-size:24px}.issuer-controls{grid-template-columns:1fr}table{min-width:700px}}
+    @media (max-width:640px){header{padding:0 12px;min-height:54px}header .badge:not(#timeBadge){display:none}h1{font-size:13px}.layout{padding:0 10px 24px}.grid.kpi{grid-template-columns:1fr 1fr}.kpi-card{min-height:76px}.decision-grid,.risk-budget-grid,.institution-controls,.model-lab-controls,.lab-kpi{grid-template-columns:1fr}.grid.two,.grid.three,.grid.four{grid-template-columns:1fr}.method-flow{grid-template-columns:1fr}.method-step{border-right:0;border-bottom:1px solid var(--line)}.panel-head{align-items:flex-start;gap:10px}.panel-head>span:last-child{font-size:8px}.client-callout .headline{font-size:24px}table{min-width:700px}}
 
     /* Typography and color refinement: research-report restraint over dashboard decoration. */
     :root{
@@ -4683,7 +3779,7 @@ HTML = r"""<!doctype html>
     .validation-controls .window-tabs{margin:0;align-items:flex-end}
     .validation-details{margin-top:16px}
     #summary-section{order:1}#client-section{order:2}#optimizer-section{order:3}#daily-reco-backtest-section{order:4}
-    #model-lab-section{order:5}#cvor-section{order:6}#climate-data-section{order:7}#issuer-section{order:8}
+    #model-lab-section{order:5}#cvor-section{order:6}#climate-data-section{order:7}
     @media (max-width:1100px){.validation-controls{grid-template-columns:1fr 1fr}.validation-controls .window-tabs{grid-column:1/-1}.client-summary{gap:12px}#dailyRecoSummary{grid-template-columns:repeat(2,minmax(0,1fr))}#dailyRecoSummary .signal-card:nth-child(4n+1){border-left:1px solid var(--line)}#dailyRecoSummary .signal-card:nth-child(2n+1){border-left:0}}
     @media (max-width:640px){body{font-size:12px}header{min-height:56px}h1{font-size:13px;font-weight:650}.panel-head>span:first-child{font-size:16px}.panel-head>span:last-child{font-size:9.5px}.grid.kpi{gap:8px}.kpi-card{min-height:78px}.kpi-label,.signal-card .label{font-size:10px}.kpi-value{font-size:21px}.client-callout .headline{font-size:27px}.validation-controls{grid-template-columns:1fr}.validation-controls .window-tabs{grid-column:auto}.decision-grid{gap:8px}#dailyRecoSummary .signal-card{padding:11px 8px}.validation-primary .value{font-size:21px}}
   </style>
@@ -4705,7 +3801,6 @@ HTML = r"""<!doctype html>
       <a href="#model-lab-section">Scenario Lab <span>Repricing</span></a>
       <a href="#cvor-section">Stress Matrix <span>Tail</span></a>
       <a href="#climate-data-section">Climate Signals <span>Lineage</span></a>
-      <a href="#issuer-section">Issuer Deep Dive <span>Method 2</span></a>
     </nav>
     <div class="side-block">
       <div class="side-kicker">Research objective</div>
@@ -4889,7 +3984,7 @@ HTML = r"""<!doctype html>
               <option value="300">300 bps</option>
             </select>
           </div>
-          <button class="secondary" onclick="loadDailyRecommendationBacktest(true)">Recalculate</button>
+          <button class="secondary" onclick="loadDailyRecommendationBacktest()">Run validation</button>
         </div>
         <div id="dailyRecoSummary" class="metric-strip" style="margin-bottom:10px"></div>
         <canvas id="dailyRecoChart" class="backtest-canvas"></canvas>
@@ -4999,23 +4094,6 @@ HTML = r"""<!doctype html>
       </div>
     </section>
 
-    <section class="panel accent-cyan" id="issuer-section">
-      <div class="panel-head"><span>Issuer Climate-Risk Deep Dive</span><span>Method 2 valuation + security-level tail readout</span></div>
-      <div class="panel-body">
-        <div class="issuer-controls">
-          <div><label for="tickerInput">Issuer universe</label><input id="tickerInput" value="AAPL, MSFT, XOM, NEE, JPM"></div>
-          <button onclick="scanCompanies()">Run issuer analysis</button>
-        </div>
-        <div id="issuerHeatStrip" class="heat-strip" style="margin-bottom:12px"></div>
-        <table id="companyTable"></table>
-        <details class="technical-details">
-          <summary>Technical component detail</summary>
-          <div class="panel-body"><table id="detailTable"></table></div>
-        </details>
-        <div class="disclosure-line">Issuer outputs are valuation and tail-risk research proxies. Dollar tail loss equals the modeled percentage loss times current market capitalization and must be read with the data-quality label.</div>
-      </div>
-    </section>
-
   </main>
 </div>
 <script>
@@ -5042,7 +4120,6 @@ async function loadDashboard(){
   await Promise.allSettled([
     runOptimizer(),
     loadClimateModelLab(),
-    scanCompanies(),
     loadDailyClimateBoard()
   ]);
   renderInvestmentCommittee();
@@ -5159,9 +4236,8 @@ async function loadDailyClimateBoard(){
   renderDailyClimateBoard(DAILY_CLIMATE_BOARD);
 }
 
-async function loadDailyRecommendationBacktest(refresh=false){
-  const params = new URLSearchParams({portfolio:"true"});
-  if(refresh) params.set("refresh","true");
+async function loadDailyRecommendationBacktest(){
+  const params = new URLSearchParams();
   const modeEl = document.getElementById("optimizerMode");
   const horizonEl = document.getElementById("optimizerHorizon");
   const styleEl = document.getElementById("optimizerStyle");
@@ -5200,12 +4276,12 @@ function renderDailyClimateBoard(d){
   if(!d) return;
   const driver = String(d.top_driver || "none").replace("_"," ");
   const ci = (DASH && DASH.climate_intelligence) || {};
-  document.getElementById("dailyClimateTag").textContent = `${d.source_mode} | ${d.market_interval || "1m"} market pulse`;
+  document.getElementById("dailyClimateTag").textContent = `${d.source_mode} | observed hazard mix`;
   document.getElementById("dailyClimateSummary").innerHTML = [
     ["Top driver", driver],
     ["Climate alerts", Number(d.climate_alerts || 0).toLocaleString()],
     ["Event pressure", fmtPct(d.daily_pressure || 0)],
-    ["Tactical overlay", fmtPct((DASH && DASH.daily_climate_signal && DASH.daily_climate_signal.allocation_pressure) || 0)],
+    ["Data confidence", fmtPct(ci.confidence || 0)],
     ["Physical pressure", fmtPct(ci.physical_score || 0)],
     ["Transition pressure", fmtPct(ci.transition_score || 0)]
   ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
@@ -5233,8 +4309,22 @@ function renderDailyRecommendationBacktest(d){
   const context = d.portfolio_context || {};
   const costs = d.cost_model || {};
   const tag = document.getElementById("dailyRecoBacktestTag");
-  if(tag) tag.textContent = `${label} | net of ${Number(costs.trading_cost_bps || 0).toFixed(0)} bps trading + ${Number(costs.annual_borrow_cost_bps || 0).toFixed(0)} bps annual borrow | ${summary.trading_days || 0} days`;
   const summaryEl = document.getElementById("dailyRecoSummary");
+  const chart = document.getElementById("dailyRecoChart");
+  if(!rows.length){
+    if(tag) tag.textContent = `${label} | insufficient verified market history`;
+    if(chart) chart.style.display = "none";
+    if(summaryEl) summaryEl.innerHTML = `<div class="signal-card validation-primary" style="grid-column:1/-1"><div class="label">Validation unavailable</div><div class="value amber">No synthetic fallback</div><div class="hint">${d.covered_securities || 0} of ${d.requested_securities || 0} selected securities have sufficient verified observations. ${d.source || "Market data unavailable"}.</div></div>`;
+    const pickTable = document.getElementById("dailyRecoPickTable");
+    const dayTable = document.getElementById("dailyRecoYearTable");
+    if(pickTable) pickTable.innerHTML = "";
+    if(dayTable) dayTable.innerHTML = "";
+    const note = document.getElementById("dailyRecoNote");
+    if(note) note.textContent = "The platform suppresses performance when verified market history is unavailable; it never substitutes simulated returns.";
+    return;
+  }
+  if(tag) tag.textContent = `${label} | net of ${Number(costs.trading_cost_bps || 0).toFixed(0)} bps trading + ${Number(costs.annual_borrow_cost_bps || 0).toFixed(0)} bps annual borrow | ${summary.trading_days || 0} days`;
+  if(chart) chart.style.display = "block";
   if(summaryEl){
     summaryEl.innerHTML = [
       ["Net signal return", fmtPct(summary.recommended_total_return || 0), clsFor(summary.recommended_total_return || 0), "After modeled costs", "validation-primary"],
@@ -5303,7 +4393,7 @@ async function runOptimizer(){
   const res = await fetch("/api/portfolio_optimizer?"+params.toString());
   OPTIMIZER = await res.json();
   renderOptimizer(OPTIMIZER);
-  await loadDailyRecommendationBacktest(true);
+  await loadDailyRecommendationBacktest();
 }
 
 function renderOptimizer(o){
@@ -5488,7 +4578,7 @@ function renderClimateData(d){
     ["NASA GISTEMP", `${Number(c.current_warming).toFixed(3)} C`, "Chronic warming state and physical-risk calibration", `Official vintage ${c.latest_year}`],
     ["NOAA GML CO2", `${Number(c.co2_ppm).toFixed(2)} ppm`, "Macro transition-pressure proxy", `10Y change ${Number(c.co2_10y_change).toFixed(2)} ppm`],
     ["NCEI disasters", `${Number(c.disaster_10y_avg).toFixed(2)} / year`, "Historical acute-loss frequency calibration", `Official vintage ${c.latest_year}`],
-    ["Derived climate context", Number(c.climate_pressure_multiplier).toFixed(3), "Cross-check for climate dashboards; not a scenario probability or Method 2 multiplier", c.source_mode || "Derived"],
+    ["Derived climate context", Number(c.climate_pressure_multiplier).toFixed(3), "Cross-check for climate dashboards; not a scenario probability or valuation multiplier", c.source_mode || "Derived"],
   ];
   table.innerHTML = `<tr><th>Input</th><th>Latest</th><th>Decision role</th><th>Lineage</th></tr>` +
     inputs.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
@@ -5563,57 +4653,6 @@ function renderScenarios(rows, summary={}){
         <td>${top}</td><td>${r.narrative}</td>
       </tr>`;
     }).join("");
-}
-
-async function scanCompanies(){
-  const tickers = document.getElementById("tickerInput").value;
-  const res = await fetch("/api/company_scan?tickers="+encodeURIComponent(tickers));
-  const rows = await res.json();
-  const table = document.getElementById("companyTable");
-  table.innerHTML = `<tr><th>Ticker</th><th>Company</th><th>Sector</th><th>Beta</th><th>Market CVaR 95%</th><th>BAU P95</th><th>BAU P99</th><th>2C P95</th><th>P95 Reduction</th><th>BAU tail mean 95 $</th><th>Data Quality</th><th>Action</th><th>Source</th></tr>` +
-    rows.map(r=>`<tr>
-      <td><b>${r.ticker}</b></td><td>${r.company}</td><td>${r.sector}</td><td>${r.beta}</td>
-      <td class="red">${fmtPct(r.market_cvar_95)}</td>
-      <td class="amber">${fmtPct(r.method2_p95_pct)}</td>
-      <td class="red">${fmtPct(r.method2_p99_pct)}</td>
-      <td class="blue">${fmtPct(r.method2_2c_p95_pct)}</td>
-      <td class="green">${fmtPct(r.method2_p95_reduction_pct)}</td>
-      <td>${fmtMoney(r.method2_cvor95_dollars)}</td>
-      <td><span class="pill ${r.method2_data_quality_score>=80?"ok":(r.method2_data_quality_score>=55?"info":"high")}">${r.method2_data_quality_label} ${r.method2_data_quality_score}</span><br><span class="hint">${r.method2_data_quality_notes}</span></td>
-      <td>${r.action}</td><td>${r.source}</td>
-    </tr>`).join("");
-  renderIssuerHeatStrip(rows);
-  renderIssuerDetails(rows);
-}
-
-function renderIssuerHeatStrip(rows){
-  const strip = document.getElementById("issuerHeatStrip");
-  if(!strip) return;
-  strip.innerHTML = rows.map(r=>{
-    const p95 = Number(r.method2_p95_pct)||0;
-    const reduction = Number(r.method2_p95_reduction_pct)||0;
-    const level = p95 >= 0.08 ? "danger" : (p95 >= 0.045 ? "warn" : "");
-    const fill = Math.max(4, Math.min(100, p95*1000));
-    const cls = p95 >= 0.06 ? "neg" : "pos";
-    return `<div class="heat-cell ${cls}">
-      <div class="top"><span>${r.ticker}</span><span class="${p95>=0.06?'red':'green'}">${fmtPct(p95)}</span></div>
-      <div class="sub">${r.sector} | 2C reduces ${fmtPct(reduction)}</div>
-      <div class="risk-meter"><span class="${level}" style="width:${fill}%"></span></div>
-    </div>`;
-  }).join("");
-}
-
-function renderIssuerDetails(rows){
-  const table = document.getElementById("detailTable");
-  table.innerHTML = `<tr><th>Ticker</th><th>BAU mean</th><th>BAU P95</th><th>BAU P99</th><th>BAU tail mean 95</th><th>2C P95</th><th>2C tail mean 95</th><th>Tail reduction</th><th>Discount</th><th>Draws</th></tr>` +
-    rows.map(r=>`<tr>
-      <td><b>${r.ticker}</b></td>
-      <td>${fmtPct(r.method2_mean_pct)}</td><td>${fmtPct(r.method2_p95_pct)}</td><td>${fmtPct(r.method2_p99_pct)}</td>
-      <td class="red">${fmtPct(r.method2_cvor95_pct)} / ${fmtMoney(r.method2_cvor95_dollars)}</td>
-      <td class="blue">${fmtPct(r.method2_2c_p95_pct)}</td><td class="blue">${fmtPct(r.method2_2c_cvor95_pct)} / ${fmtMoney(r.method2_2c_cvor95_dollars)}</td>
-      <td class="green">${fmtPct(r.method2_cvor95_reduction_pct)}</td>
-      <td>${fmtPct(r.method2_discount_rate)}</td><td>${r.method2_draws}<br><span class="hint">${r.method2_climate_data_year}, ${Number(r.method2_current_warming).toFixed(2)}C, ${Number(r.method2_co2_ppm).toFixed(1)}ppm</span></td>
-    </tr>`).join("");
 }
 
 function chartTime(row){
@@ -6330,9 +5369,6 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/dashboard":
             self._send_json(build_payload())
             return
-        if parsed.path == "/api/climate_intelligence":
-            self._send_json(climate_intelligence_payload())
-            return
         if parsed.path == "/api/climate_model_lab":
             q = parse_qs(parsed.query, keep_blank_values=True)
             self._send_json(
@@ -6345,28 +5381,6 @@ class Handler(BaseHTTPRequestHandler):
                     ticker=q.get("ticker", ["AAPL"])[0],
                 )
             )
-            return
-        if parsed.path == "/api/company_scan":
-            q = parse_qs(parsed.query)
-            tickers = ",".join(q.get("tickers", ["AAPL,MSFT,XOM,NEE,JPM"]))
-            self._send_json(company_scan(tickers.split(",")))
-            return
-        if parsed.path == "/api/universe_search":
-            q = parse_qs(parsed.query)
-            query = q.get("query", [""])[0]
-            limit = q.get("limit", ["80"])[0]
-            include_etfs = q.get("include_etfs", ["false"])[0].lower() in ["1", "true", "yes"]
-            self._send_json(search_us_universe(query=query, limit=limit, include_etfs=include_etfs))
-            return
-        if parsed.path == "/api/market_chart":
-            q = parse_qs(parsed.query)
-            tickers = q.get("tickers", ["SPY,QQQ,AAPL,XOM"])[0]
-            period = q.get("period", ["6mo"])[0]
-            interval = q.get("interval", ["1d"])[0]
-            self._send_json(market_chart_payload(tickers, period=period, interval=interval))
-            return
-        if parsed.path == "/api/etf_watchlist":
-            self._send_json(etf_watchlist_payload())
             return
         if parsed.path == "/api/portfolio_optimizer":
             q = parse_qs(parsed.query, keep_blank_values=True)
@@ -6384,17 +5398,10 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/daily_climate_board":
             self._send_json(daily_climate_board_payload())
             return
-        if parsed.path == "/api/daily_climate_signal":
-            self._send_json(load_daily_climate_signal())
-            return
         if parsed.path == "/api/daily_recommendation_backtest":
             q = parse_qs(parsed.query, keep_blank_values=True)
-            refresh = q.get("refresh", ["false"])[0].lower() in ["1", "true", "yes"]
-            use_portfolio = q.get("portfolio", ["false"])[0].lower() in ["1", "true", "yes"]
             self._send_json(
                 daily_recommendation_backtest_payload(
-                    force_refresh=refresh,
-                    use_portfolio=use_portfolio,
                     mode=q.get("mode", ["etf_stock"])[0],
                     capital=q.get("capital", [str(DEFAULT_PORTFOLIO_VALUE)])[0],
                     horizon=q.get("horizon", ["long"])[0],

@@ -45,19 +45,6 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertGreater(energy["micro_transition"], 0.0)
         self.assertLess(technology["micro_transition"], 0.0)
 
-    def test_method2_tail_and_mitigation_ordering(self):
-        info = {
-            "sector": "Technology",
-            "marketCap": 1_000_000_000,
-            "beta": 1.0,
-            "revenueGrowth": 0.03,
-            "shortName": "Test Issuer",
-        }
-        result = app.method2_company_cvor("TEST", info=info, draws=200)
-        self.assertGreaterEqual(result["method2_cvor95_pct"], result["method2_p95_pct"])
-        self.assertGreaterEqual(result["method2_p95_pct"], result["method2_mean_pct"])
-        self.assertGreaterEqual(result["method2_p95_pct"], result["method2_2c_p95_pct"])
-
     def test_value_attribution_reconciles_to_total(self):
         result = app.scenario_repricing_for_scope(
             [self.energy],
@@ -151,6 +138,34 @@ class ClimateMethodologyTests(unittest.TestCase):
             {"daily_pressure": 0.80, "allocation_pressure": 0.90, "top_driver": "fallback", "category_intensity": {}},
         )
         self.assertTrue(all(row["daily_adjustment_bps"] == 0 for row in adjusted))
+
+    def test_climate_board_contains_observed_alerts_not_duplicate_picks(self):
+        signal = {
+            "source_mode": "test NWS input",
+            "source_url": "https://api.weather.gov/alerts/active",
+            "alerts_total": 2,
+            "climate_alerts": 2,
+            "top_driver": "heat",
+            "daily_pressure": 0.5,
+            "allocation_pressure": 0.4,
+            "category_counts": {"heat": 2},
+            "category_intensity": {"heat": 0.7},
+            "sample_events": [],
+        }
+        with patch.object(app, "load_daily_climate_signal", return_value=signal):
+            result = app.daily_climate_board_payload()
+
+        self.assertTrue(result["daily_alerts"])
+        self.assertNotIn("stock_recommendations", result)
+        self.assertNotIn("etf_recommendations", result)
+        self.assertNotIn("market_interval", result)
+
+    def test_market_history_never_substitutes_simulated_returns(self):
+        with patch.object(app, "yf", None):
+            prices, source = app.fetch_daily_close_history(["SPY", "QQQ"], period="3y")
+
+        self.assertTrue(all(not values for values in prices.values()))
+        self.assertEqual(source, "market data unavailable")
 
     def test_bounded_priority_allocation_respects_budget_and_effective_caps(self):
         rows = [
