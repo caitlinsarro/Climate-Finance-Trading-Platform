@@ -5,12 +5,15 @@ English U.S.-listed climate-finance research cockpit inspired by the earlier Chi
 ## What It Does
 
 - U.S.-listed sector ETF allocation dashboard
-- Client climate-intelligence summary with physical risk, transition risk, CVOR contribution, data confidence, affected holdings, and suggested action
+- Client climate-intelligence summary with physical pressure, transition pressure, an independent scenario-tail guardrail, data confidence, affected holdings, and suggested action
+- Interactive Scenario & Event Lab with country, sector, issuer, and portfolio scopes
+- Long-term target-vs-reference repricing through cash-flow and present-value impacts
+- Short-term NWS event nowcast that converts hazard intensity, exposure, and vulnerability into tactical basis points
 - Daily climate-alert overlay that moves current ETF allocation from NWS active weather alerts
 - Climate signal from temperature anomaly and weather disaster frequency proxies
 - Dedicated Climate Data Center with live, official, and source-ready physical/transition data inputs
-- Automatic daily stock picker walk-forward backtest over 3 weeks, 3 months, and 3 years
-- Portfolio CVOR scenario matrix
+- Climate buy/sell walk-forward backtest over 3 weeks, 3 months, and 3 years using the optimizer-selected universe
+- Conditional portfolio scenario stress matrix with no claimed scenario occurrence probabilities
 - Company-level issuer scanner for market CVaR and climate value-at-risk components
 - U.S. listed company search from NasdaqTrader listings
 - Method 2 Climate VaR approximation for each queried issuer
@@ -57,6 +60,18 @@ The issuer CVOR scanner follows the logic of Dietz, Bowen, Dixon and Gradwell (2
 
 This is still a company-level approximation because true Method 2 DICE runs are global and require full IAM scenario paths. The platform maps the global method to U.S. issuers through sector sensitivity, beta, market capitalization, and available growth data.
 
+## Scenario & Event Methodology
+
+The platform now separates strategic climate valuation from tactical event risk:
+
+- `Long-term`: choose a target and reference scenario. Country-level acute, chronic, and macro transition shocks are downscaled to sectors, then to issuers using transparent fixed-asset, labor-intensity, and earnings-sensitivity proxies. Climate-adjusted cash flows are discounted into an as-of-date value impact.
+- `Short-term`: NWS alert intensity is combined with hazard-specific sector exposure and issuer vulnerability. The output is event selection risk and a tactical portfolio overlay in basis points.
+- `Scope`: the same chain can be read at country, sector, issuer, or current-portfolio level.
+- `Scenario rule`: NGFS-style scenarios are conditional stresses, not forecasts. The model does not assign occurrence probabilities to them.
+- `Tail rule`: the mean of the two largest portfolio scenario losses is labeled a scenario-tail proxy, not regulatory Expected Shortfall. It is kept separate from physical and transition pressure to avoid double counting.
+
+The scenario paths, sector medians, and issuer vulnerability ratios in this prototype are documented, replaceable calibrations. They are not Bloomberg data. A production implementation should replace issuer proxies with geolocated facilities, revenue segmentation, supply-chain links, and licensed NGFS or vendor scenario data.
+
 ## Portfolio Optimizer
 
 The optimizer is designed for an asset-investor workflow:
@@ -75,7 +90,7 @@ By default, the optimizer uses an automatic climate universe. It ranks climate-r
 
 For each asset, the optimizer estimates a score from market behavior, physical climate risk, transition risk, Method 2/CVOR proxy, and volatility, then converts it into a portfolio weight. It multiplies the weight by the selected capital amount to show target dollars and estimated shares.
 
-The automatic daily stock picker backtest is a separate walk-forward test. Each signal day selects the top five stocks using prior market trend, volatility, annual climate pressure, and sector physical/transition risk, then compares next-day performance with the equal-weight recommendation universe over 3-week, 3-month, and 3-year windows. Optimizer capital and horizon controls affect the optimizer output; this daily picker evidence stays capital-independent.
+The climate buy/sell backtest is a walk-forward test over the current optimizer-selected universe. Each historical signal date uses only information available before the next trading day, forms a climate-resilient buy book and a climate-vulnerable sell/underweight book, and compares the resulting overlay with the equal-weight universe over 3-week, 3-month, and 3-year windows. Capital affects dollar sizing, while return evidence remains capital-independent.
 
 ## Climate Data Sources
 

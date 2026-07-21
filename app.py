@@ -279,6 +279,134 @@ SECTOR_TRANSITION_FACTORS = {
 }
 
 
+# Transparent prototype calibrations for the scenario lab. These are not licensed
+# Bloomberg or NGFS output values; they preserve the target-vs-reference workflow
+# and can be replaced with official scenario paths without changing the analytics.
+CLIMATE_SCENARIO_PATHS = {
+    "baseline": {
+        "label": "Climate-agnostic baseline",
+        "category": "Reference",
+        "warming_2100": 1.30,
+        "acute_gdp_loss_2050": 0.000,
+        "chronic_gdp_loss_2050": 0.000,
+        "macro_transition_loss_2050": 0.000,
+        "transition_demand_shock_2050": 0.000,
+        "carbon_price_label": "None",
+        "note": "Counterfactual reference path with no modeled climate damage or transition shock.",
+    },
+    "net_zero_2050": {
+        "label": "Net Zero 2050",
+        "category": "Orderly",
+        "warming_2100": 1.40,
+        "acute_gdp_loss_2050": 0.018,
+        "chronic_gdp_loss_2050": 0.012,
+        "macro_transition_loss_2050": 0.022,
+        "transition_demand_shock_2050": 0.180,
+        "carbon_price_label": "High / early",
+        "note": "Lower physical losses, with material near-term transition risks and opportunities.",
+    },
+    "below_2c": {
+        "label": "Below 2C",
+        "category": "Orderly",
+        "warming_2100": 1.70,
+        "acute_gdp_loss_2050": 0.024,
+        "chronic_gdp_loss_2050": 0.018,
+        "macro_transition_loss_2050": 0.012,
+        "transition_demand_shock_2050": 0.105,
+        "carbon_price_label": "Moderate / early",
+        "note": "Moderate transition pressure and lower long-run physical damage.",
+    },
+    "delayed_transition": {
+        "label": "Delayed Transition",
+        "category": "Disorderly",
+        "warming_2100": 1.70,
+        "acute_gdp_loss_2050": 0.030,
+        "chronic_gdp_loss_2050": 0.022,
+        "macro_transition_loss_2050": 0.032,
+        "transition_demand_shock_2050": 0.205,
+        "carbon_price_label": "High / late",
+        "note": "A late policy shock creates sharper repricing and execution risk.",
+    },
+    "current_policies": {
+        "label": "Current Policies",
+        "category": "Hot House World",
+        "warming_2100": 2.90,
+        "acute_gdp_loss_2050": 0.060,
+        "chronic_gdp_loss_2050": 0.045,
+        "macro_transition_loss_2050": 0.004,
+        "transition_demand_shock_2050": 0.025,
+        "carbon_price_label": "Low",
+        "note": "Limited transition shock, but materially higher acute and chronic physical losses.",
+    },
+    "fragmented_world": {
+        "label": "Fragmented World",
+        "category": "Too little, too late",
+        "warming_2100": 2.30,
+        "acute_gdp_loss_2050": 0.050,
+        "chronic_gdp_loss_2050": 0.036,
+        "macro_transition_loss_2050": 0.028,
+        "transition_demand_shock_2050": 0.160,
+        "carbon_price_label": "Uneven",
+        "note": "Elevated physical losses combine with an inefficient, regionally fragmented transition.",
+    },
+}
+
+
+# Relative vulnerability factors follow the top-down logic in the uploaded
+# Bloomberg methodology: acute risk scales with physical capital intensity,
+# chronic heat risk with labor intensity, and macro transition with earnings beta.
+SECTOR_DOWNSCALING_FACTORS = {
+    "Real Estate": {"fixed_asset": 0.82, "labor": 0.16, "macro_beta": 0.82},
+    "Utilities": {"fixed_asset": 0.68, "labor": 0.22, "macro_beta": 0.58},
+    "Energy": {"fixed_asset": 0.62, "labor": 0.18, "macro_beta": 0.92},
+    "Basic Materials": {"fixed_asset": 0.52, "labor": 0.42, "macro_beta": 1.02},
+    "Consumer Defensive": {"fixed_asset": 0.44, "labor": 0.58, "macro_beta": 0.55},
+    "Consumer Cyclical": {"fixed_asset": 0.40, "labor": 0.78, "macro_beta": 1.22},
+    "Industrials": {"fixed_asset": 0.36, "labor": 0.66, "macro_beta": 1.05},
+    "Healthcare": {"fixed_asset": 0.29, "labor": 1.00, "macro_beta": 0.62},
+    "Technology": {"fixed_asset": 0.25, "labor": 0.88, "macro_beta": 0.86},
+    "Communication Services": {"fixed_asset": 0.27, "labor": 0.46, "macro_beta": 0.84},
+    "Financial Services": {"fixed_asset": 0.08, "labor": 0.36, "macro_beta": 0.90},
+    "Financials": {"fixed_asset": 0.08, "labor": 0.36, "macro_beta": 0.90},
+}
+
+
+ISSUER_VULNERABILITY_OVERRIDES = {
+    "AAPL": {"acute_ratio": 0.84, "chronic_ratio": 0.72, "quality": "Issuer proxy"},
+    "MSFT": {"acute_ratio": 0.80, "chronic_ratio": 0.68, "quality": "Issuer proxy"},
+    "NVDA": {"acute_ratio": 0.78, "chronic_ratio": 0.62, "quality": "Issuer proxy"},
+    "XOM": {"acute_ratio": 1.18, "chronic_ratio": 0.78, "quality": "Issuer proxy"},
+    "CVX": {"acute_ratio": 1.15, "chronic_ratio": 0.80, "quality": "Issuer proxy"},
+    "NEE": {"acute_ratio": 1.10, "chronic_ratio": 0.86, "quality": "Issuer proxy"},
+    "DUK": {"acute_ratio": 1.12, "chronic_ratio": 0.88, "quality": "Issuer proxy"},
+    "JPM": {"acute_ratio": 0.74, "chronic_ratio": 0.92, "quality": "Issuer proxy"},
+    "TRV": {"acute_ratio": 0.82, "chronic_ratio": 0.94, "quality": "Issuer proxy"},
+    "CB": {"acute_ratio": 0.80, "chronic_ratio": 0.92, "quality": "Issuer proxy"},
+}
+
+
+HAZARD_SECTOR_BETAS = {
+    "heat": {"Energy": 0.66, "Utilities": 0.92, "Industrials": 0.76, "Technology": 0.44, "Financials": 0.28, "Financial Services": 0.28, "Consumer Cyclical": 0.55, "Consumer Defensive": 0.60, "Healthcare": 0.58, "Basic Materials": 0.78, "Real Estate": 0.54, "Communication Services": 0.38},
+    "flood": {"Energy": 0.82, "Utilities": 0.90, "Industrials": 0.86, "Technology": 0.35, "Financials": 0.76, "Financial Services": 0.76, "Consumer Cyclical": 0.64, "Consumer Defensive": 0.70, "Healthcare": 0.55, "Basic Materials": 0.80, "Real Estate": 0.96, "Communication Services": 0.46},
+    "fire": {"Energy": 0.72, "Utilities": 0.98, "Industrials": 0.64, "Technology": 0.34, "Financials": 0.72, "Financial Services": 0.72, "Consumer Cyclical": 0.48, "Consumer Defensive": 0.58, "Healthcare": 0.52, "Basic Materials": 0.74, "Real Estate": 0.88, "Communication Services": 0.42},
+    "tropical": {"Energy": 0.94, "Utilities": 0.96, "Industrials": 0.90, "Technology": 0.38, "Financials": 0.84, "Financial Services": 0.84, "Consumer Cyclical": 0.72, "Consumer Defensive": 0.74, "Healthcare": 0.62, "Basic Materials": 0.82, "Real Estate": 0.96, "Communication Services": 0.50},
+    "storm": {"Energy": 0.78, "Utilities": 0.90, "Industrials": 0.82, "Technology": 0.38, "Financials": 0.72, "Financial Services": 0.72, "Consumer Cyclical": 0.62, "Consumer Defensive": 0.66, "Healthcare": 0.58, "Basic Materials": 0.76, "Real Estate": 0.86, "Communication Services": 0.48},
+    "air_quality": {"Energy": 0.52, "Utilities": 0.58, "Industrials": 0.62, "Technology": 0.34, "Financials": 0.24, "Financial Services": 0.24, "Consumer Cyclical": 0.42, "Consumer Defensive": 0.44, "Healthcare": 0.72, "Basic Materials": 0.64, "Real Estate": 0.38, "Communication Services": 0.30},
+    "winter": {"Energy": 0.72, "Utilities": 0.88, "Industrials": 0.68, "Technology": 0.32, "Financials": 0.30, "Financial Services": 0.30, "Consumer Cyclical": 0.48, "Consumer Defensive": 0.52, "Healthcare": 0.50, "Basic Materials": 0.66, "Real Estate": 0.48, "Communication Services": 0.34},
+}
+
+
+HAZARD_WEIGHTS = {
+    "heat": 0.18,
+    "flood": 0.19,
+    "fire": 0.16,
+    "tropical": 0.18,
+    "storm": 0.14,
+    "air_quality": 0.08,
+    "winter": 0.07,
+}
+
+
 CLIMATE_DATA_SOURCE_CATALOG = [
     {
         "name": "NWS Active Alerts",
@@ -401,7 +529,6 @@ CLIMATE_PROXY = [
 CLIMATE_SCENARIOS = [
     {
         "name": "Orderly Transition",
-        "probability": 0.35,
         "physical_shock": 0.035,
         "transition_shock": 0.055,
         "litigation_shock": 0.010,
@@ -410,7 +537,6 @@ CLIMATE_SCENARIOS = [
     },
     {
         "name": "Disorderly Transition",
-        "probability": 0.30,
         "physical_shock": 0.060,
         "transition_shock": 0.120,
         "litigation_shock": 0.025,
@@ -419,7 +545,6 @@ CLIMATE_SCENARIOS = [
     },
     {
         "name": "Hot House World",
-        "probability": 0.25,
         "physical_shock": 0.155,
         "transition_shock": 0.035,
         "litigation_shock": 0.030,
@@ -428,7 +553,6 @@ CLIMATE_SCENARIOS = [
     },
     {
         "name": "Liability Shock",
-        "probability": 0.10,
         "physical_shock": 0.070,
         "transition_shock": 0.080,
         "litigation_shock": 0.090,
@@ -1241,10 +1365,8 @@ def climate_scenario_matrix(allocation_rows):
     latest_year = max(r["year"] for r in allocation_rows)
     latest_alloc = [r for r in allocation_rows if r["year"] == latest_year]
     weights = {r["ticker"]: safe_float(r["climate_weight"]) for r in latest_alloc}
-    state = climate_state_variables()
-    adjusted_probs = scenario_probability_adjustments(state)
     rows = []
-    weighted_losses = []
+    scenario_losses = []
     for scenario in CLIMATE_SCENARIOS:
         sector_losses = {}
         portfolio_loss = 0.0
@@ -1252,13 +1374,11 @@ def climate_scenario_matrix(allocation_rows):
             loss = sector_climate_loss_rate(meta, scenario)
             sector_losses[ticker] = round(loss, 4)
             portfolio_loss += weights.get(ticker, 0.0) * loss
-        probability = adjusted_probs.get(scenario["name"], scenario["probability"])
-        weighted_losses.append((portfolio_loss, probability))
+        scenario_losses.append(portfolio_loss)
         rows.append(
             {
                 "scenario": scenario["name"],
-                "probability": probability,
-                "base_probability": scenario["probability"],
+                "scenario_type": "Conditional stress",
                 "carbon_price": scenario["carbon_price"],
                 "portfolio_loss_rate": round(portfolio_loss, 4),
                 "portfolio_loss_dollars": round(portfolio_loss * DEFAULT_PORTFOLIO_VALUE, 2),
@@ -1266,20 +1386,24 @@ def climate_scenario_matrix(allocation_rows):
                 "narrative": scenario["narrative"],
             }
         )
-    expected_loss = sum(loss * prob for loss, prob in weighted_losses)
-    worst_loss = max((loss for loss, _ in weighted_losses), default=0.0)
+    average_loss = sum(scenario_losses) / max(1, len(scenario_losses))
+    worst_loss = max(scenario_losses, default=0.0)
     sorted_rows = sorted(rows, key=lambda r: r["portfolio_loss_rate"], reverse=True)
     tail = sorted_rows[:2]
-    cvor_95 = sum(r["portfolio_loss_rate"] for r in tail) / max(1, len(tail))
+    scenario_tail = sum(r["portfolio_loss_rate"] for r in tail) / max(1, len(tail))
     summary = {
-        "expected_climate_loss_rate": round(expected_loss, 4),
-        "expected_climate_loss_dollars": round(expected_loss * DEFAULT_PORTFOLIO_VALUE, 2),
+        "average_scenario_loss_rate": round(average_loss, 4),
+        "average_scenario_loss_dollars": round(average_loss * DEFAULT_PORTFOLIO_VALUE, 2),
+        "expected_climate_loss_rate": round(average_loss, 4),
+        "expected_climate_loss_dollars": round(average_loss * DEFAULT_PORTFOLIO_VALUE, 2),
         "worst_scenario_loss_rate": round(worst_loss, 4),
         "worst_scenario_loss_dollars": round(worst_loss * DEFAULT_PORTFOLIO_VALUE, 2),
-        "cvor_95_loss_rate": round(cvor_95, 4),
-        "cvor_95_loss_dollars": round(cvor_95 * DEFAULT_PORTFOLIO_VALUE, 2),
-        "scenario_probability_method": "Base scenario probabilities adjusted by current acute hazard, chronic climate state, and macro transition state.",
-        "climate_state": state,
+        "scenario_tail_loss_rate": round(scenario_tail, 4),
+        "scenario_tail_loss_dollars": round(scenario_tail * DEFAULT_PORTFOLIO_VALUE, 2),
+        "cvor_95_loss_rate": round(scenario_tail, 4),
+        "cvor_95_loss_dollars": round(scenario_tail * DEFAULT_PORTFOLIO_VALUE, 2),
+        "scenario_probability_method": "No occurrence probabilities assigned. Results are conditional scenario stresses; tail proxy is the mean of the two largest scenario losses.",
+        "tail_label": "Scenario tail proxy - not regulatory Expected Shortfall",
     }
     return rows, summary
 
@@ -1776,6 +1900,359 @@ def climate_state_variables(daily_signal=None, context=None):
     }
 
 
+def normalize_model_sector(sector):
+    sector = str(sector or "Technology").strip()
+    aliases = {
+        "Financial": "Financials",
+        "Finance": "Financials",
+        "Materials": "Basic Materials",
+        "Consumer Discretionary": "Consumer Cyclical",
+        "Consumer Staples": "Consumer Defensive",
+        "Health Care": "Healthcare",
+        "Communications": "Communication Services",
+    }
+    sector = aliases.get(sector, sector)
+    if sector not in SECTOR_DOWNSCALING_FACTORS:
+        return "Technology"
+    return sector
+
+
+def issuer_vulnerability_profile(ticker, sector):
+    symbol = yahoo_symbol(ticker or "AAPL")
+    sector = normalize_model_sector(sector)
+    override = ISSUER_VULNERABILITY_OVERRIDES.get(symbol)
+    if override:
+        acute_ratio = safe_float(override.get("acute_ratio"), 1.0)
+        chronic_ratio = safe_float(override.get("chronic_ratio"), 1.0)
+        quality = override.get("quality", "Issuer proxy")
+    else:
+        seed = sum((idx + 3) * ord(char) for idx, char in enumerate(symbol or sector))
+        acute_ratio = 0.82 + (seed % 31) / 100
+        chronic_ratio = 0.80 + ((seed // 7) % 33) / 100
+        quality = "Sector median + deterministic issuer proxy"
+    factors = SECTOR_DOWNSCALING_FACTORS[sector]
+    return {
+        "acute_ratio": round(clamp(acute_ratio, 0.55, 1.45), 4),
+        "chronic_ratio": round(clamp(chronic_ratio, 0.55, 1.45), 4),
+        "fixed_asset_intensity": round(factors["fixed_asset"] * acute_ratio, 4),
+        "labor_intensity": round(factors["labor"] * chronic_ratio, 4),
+        "macro_beta": round(factors["macro_beta"], 4),
+        "quality": quality,
+    }
+
+
+def current_model_portfolio(daily_signal=None):
+    daily_signal = daily_signal or load_daily_climate_signal()
+    climate_rows = climate_signal()
+    regime = regime_for_year(CURRENT_YEAR, climate_rows)
+    weights = climate_weight_policy(regime["regime"])
+    base_rows = []
+    for ticker, weight in weights.items():
+        base_rows.append(
+            {
+                "year": CURRENT_YEAR,
+                "ticker": ticker,
+                "sector": SECTOR_ETFS[ticker]["name"],
+                "benchmark_weight": round(1 / len(SECTOR_ETFS), 4),
+                "climate_weight": round(weight, 4),
+                "sector_note": SECTOR_ETFS[ticker]["client_note"],
+            }
+        )
+    return apply_daily_climate_overlay(base_rows, daily_signal)
+
+
+def climate_model_scope_rows(scope="portfolio", sector="Technology", ticker="AAPL", daily_signal=None):
+    scope = str(scope or "portfolio").lower()
+    if scope not in {"country", "sector", "issuer", "portfolio"}:
+        scope = "portfolio"
+    daily_signal = daily_signal or load_daily_climate_signal()
+    sector = normalize_model_sector(SECTOR_ETFS.get(yahoo_symbol(ticker), {}).get("name", sector))
+    if scope == "portfolio":
+        rows = []
+        portfolio = current_model_portfolio(daily_signal)
+        total = sum(safe_float(row.get("climate_weight"), 0.0) for row in portfolio) or 1.0
+        for row in portfolio:
+            row_sector = normalize_model_sector(row.get("sector"))
+            rows.append(
+                {
+                    "name": row.get("ticker"),
+                    "ticker": row.get("ticker"),
+                    "sector": row_sector,
+                    "weight": safe_float(row.get("climate_weight"), 0.0) / total,
+                    "vulnerability": issuer_vulnerability_profile(row.get("ticker"), row_sector),
+                }
+            )
+        return scope, rows
+    if scope == "country":
+        return scope, [
+            {
+                "name": "United States economy",
+                "ticker": "US",
+                "sector": "Economy",
+                "weight": 1.0,
+                "vulnerability": {
+                    "acute_ratio": 1.0,
+                    "chronic_ratio": 1.0,
+                    "fixed_asset_intensity": 0.42,
+                    "labor_intensity": 0.55,
+                    "macro_beta": 1.0,
+                    "quality": "Country scenario input",
+                },
+            }
+        ]
+    if scope == "sector":
+        vulnerability = issuer_vulnerability_profile(sector, sector)
+        vulnerability.update({"acute_ratio": 1.0, "chronic_ratio": 1.0, "quality": "Sector calibration"})
+        return scope, [{"name": sector, "ticker": "SECTOR", "sector": sector, "weight": 1.0, "vulnerability": vulnerability}]
+    return scope, [
+        {
+            "name": yahoo_symbol(ticker or "AAPL"),
+            "ticker": yahoo_symbol(ticker or "AAPL"),
+            "sector": sector,
+            "weight": 1.0,
+            "vulnerability": issuer_vulnerability_profile(ticker, sector),
+        }
+    ]
+
+
+def scenario_terminal_components(scenario, sector, vulnerability, horizon):
+    sector = normalize_model_sector(sector) if sector != "Economy" else "Economy"
+    years_to_2050 = max(1, 2050 - CURRENT_YEAR)
+    horizon_fraction = clamp((int(horizon) - CURRENT_YEAR) / years_to_2050, 0.04, 1.0)
+    physical_scale = horizon_fraction ** 1.25
+    transition_scale = horizon_fraction ** 0.72
+    if sector == "Economy":
+        acute_ratio = chronic_ratio = macro_beta = 1.0
+        transition_risk = 0.50
+        transition_opportunity = 0.45
+    else:
+        factors = SECTOR_DOWNSCALING_FACTORS[sector]
+        acute_ratio = clamp((factors["fixed_asset"] / 0.42) * safe_float(vulnerability.get("acute_ratio"), 1.0), 0.50, 1.70)
+        chronic_ratio = clamp((factors["labor"] / 0.55) * safe_float(vulnerability.get("chronic_ratio"), 1.0), 0.50, 1.70)
+        macro_beta = safe_float(vulnerability.get("macro_beta"), factors["macro_beta"])
+        transition = sector_transition_profile(sector)
+        transition_risk = transition["risk"]
+        transition_opportunity = transition["opportunity"]
+    return {
+        "acute_physical": safe_float(scenario.get("acute_gdp_loss_2050"), 0.0) * acute_ratio * physical_scale,
+        "chronic_physical": safe_float(scenario.get("chronic_gdp_loss_2050"), 0.0) * chronic_ratio * physical_scale,
+        "macro_transition": safe_float(scenario.get("macro_transition_loss_2050"), 0.0) * macro_beta * transition_scale,
+        "micro_transition": safe_float(scenario.get("transition_demand_shock_2050"), 0.0)
+        * (transition_risk - 0.70 * transition_opportunity)
+        * transition_scale,
+    }
+
+
+def discounted_scenario_value(components, horizon, wacc=0.075, growth=0.025):
+    horizon = int(clamp(safe_float(horizon, 2050), CURRENT_YEAR + 1, 2050))
+    years = max(1, horizon - CURRENT_YEAR)
+    pv = 0.0
+    terminal_cash_flow = 1.0
+    for step in range(1, years + 1):
+        progress = step / years
+        loss = (
+            safe_float(components.get("acute_physical"), 0.0) * (progress ** 1.35)
+            + safe_float(components.get("chronic_physical"), 0.0) * (progress ** 1.20)
+            + safe_float(components.get("macro_transition"), 0.0) * (progress ** 0.68)
+            + safe_float(components.get("micro_transition"), 0.0) * (progress ** 0.58)
+        )
+        baseline_cash_flow = (1 + growth) ** step
+        terminal_cash_flow = baseline_cash_flow * (1 - clamp(loss, -0.25, 0.70))
+        pv += terminal_cash_flow / ((1 + wacc) ** step)
+    terminal_value = terminal_cash_flow * (1 + growth) / max(0.015, wacc - growth)
+    pv += terminal_value / ((1 + wacc) ** years)
+    return pv
+
+
+def scenario_repricing_for_scope(scope_rows, target, reference, horizon):
+    component_labels = {
+        "acute_physical": "Acute physical",
+        "chronic_physical": "Chronic physical",
+        "macro_transition": "Macro transition",
+        "micro_transition": "Business-model transition",
+    }
+    aggregate_impact = 0.0
+    aggregate_target = {key: 0.0 for key in component_labels}
+    aggregate_reference = {key: 0.0 for key in component_labels}
+    aggregate_contribution = {key: 0.0 for key in component_labels}
+    instrument_rows = []
+    for row in scope_rows:
+        weight = safe_float(row.get("weight"), 0.0)
+        target_components = scenario_terminal_components(target, row["sector"], row["vulnerability"], horizon)
+        reference_components = scenario_terminal_components(reference, row["sector"], row["vulnerability"], horizon)
+        reference_value = discounted_scenario_value(reference_components, horizon)
+        target_value = discounted_scenario_value(target_components, horizon)
+        value_impact = target_value / max(reference_value, 1e-9) - 1
+        aggregate_impact += weight * value_impact
+        component_contributions = {}
+        for key in component_labels:
+            mixed = dict(reference_components)
+            mixed[key] = target_components[key]
+            contribution = discounted_scenario_value(mixed, horizon) / max(reference_value, 1e-9) - 1
+            component_contributions[key] = contribution
+            aggregate_target[key] += weight * target_components[key]
+            aggregate_reference[key] += weight * reference_components[key]
+            aggregate_contribution[key] += weight * contribution
+        instrument_rows.append(
+            {
+                "name": row["name"],
+                "ticker": row["ticker"],
+                "sector": row["sector"],
+                "weight": round(weight, 4),
+                "value_impact": round(value_impact, 4),
+                "acute_ratio": row["vulnerability"].get("acute_ratio"),
+                "chronic_ratio": row["vulnerability"].get("chronic_ratio"),
+                "data_quality": row["vulnerability"].get("quality"),
+            }
+        )
+    attribution = []
+    for key, label in component_labels.items():
+        attribution.append(
+            {
+                "component": key,
+                "label": label,
+                "target_loss": round(aggregate_target[key], 4),
+                "reference_loss": round(aggregate_reference[key], 4),
+                "loss_delta": round(aggregate_target[key] - aggregate_reference[key], 4),
+                "value_contribution": round(aggregate_contribution[key], 4),
+            }
+        )
+    return {
+        "value_impact": round(aggregate_impact, 4),
+        "physical_loss_delta": round(
+            aggregate_target["acute_physical"]
+            + aggregate_target["chronic_physical"]
+            - aggregate_reference["acute_physical"]
+            - aggregate_reference["chronic_physical"],
+            4,
+        ),
+        "transition_loss_delta": round(
+            aggregate_target["macro_transition"]
+            + aggregate_target["micro_transition"]
+            - aggregate_reference["macro_transition"]
+            - aggregate_reference["micro_transition"],
+            4,
+        ),
+        "attribution": attribution,
+        "instruments": sorted(instrument_rows, key=lambda row: abs(row["value_impact"]), reverse=True),
+    }
+
+
+def event_nowcast_for_scope(scope_rows, daily_signal, state):
+    categories = daily_signal.get("category_intensity", {}) or {}
+    confidence = safe_float(state.get("data_confidence"), 0.50)
+    hazard_rows = []
+    raw_event_risk = 0.0
+    weighted_resilience = 0.0
+    weighted_opportunity = 0.0
+    for row in scope_rows:
+        weight = safe_float(row.get("weight"), 0.0)
+        if row["sector"] == "Economy":
+            weighted_resilience += weight * 0.50
+            weighted_opportunity += weight * 0.42
+        else:
+            transition = sector_transition_profile(row["sector"])
+            sensitivity = COMPANY_SECTOR_SENSITIVITY.get(row["sector"], 0.50)
+            weighted_resilience += weight * (1 - 0.62 * sensitivity)
+            weighted_opportunity += weight * transition["opportunity"]
+    for hazard, hazard_weight in HAZARD_WEIGHTS.items():
+        intensity = safe_float(categories.get(hazard), 0.0)
+        exposure_beta = 0.0
+        represented = []
+        for row in scope_rows:
+            weight = safe_float(row.get("weight"), 0.0)
+            sector = row["sector"]
+            if sector == "Economy":
+                beta = 0.58
+            else:
+                beta = HAZARD_SECTOR_BETAS.get(hazard, {}).get(sector, 0.50)
+                beta *= safe_float(row["vulnerability"].get("acute_ratio"), 1.0)
+            exposure_beta += weight * beta
+            represented.append((beta, row["name"]))
+        contribution = hazard_weight * intensity * exposure_beta
+        raw_event_risk += contribution
+        dominant = max(represented, default=(0.0, "-"))[1]
+        hazard_rows.append(
+            {
+                "hazard": hazard,
+                "label": hazard.replace("_", " ").title(),
+                "intensity": round(intensity, 4),
+                "exposure_beta": round(exposure_beta, 4),
+                "risk_contribution": round(contribution, 4),
+                "dominant_exposure": dominant,
+            }
+        )
+    event_risk = clamp(0.72 * raw_event_risk + 0.28 * safe_float(state.get("daily_pressure"), 0.0), 0.0, 1.0)
+    selection_risk = clamp(0.72 * event_risk + 0.28 * (1 - confidence), 0.0, 1.0)
+    tactical_edge = 0.52 * weighted_resilience + 0.18 * weighted_opportunity - 0.82 * event_risk - 0.14 * state["macro_transition_state"]
+    overlay_bps = int(round(clamp(tactical_edge * 450, -300, 250)))
+    if overlay_bps <= -80:
+        action = "Underweight / hedge"
+    elif overlay_bps >= 80:
+        action = "Tactical overweight"
+    else:
+        action = "Hold near strategic weight"
+    return {
+        "event_risk": round(event_risk, 4),
+        "selection_risk": round(selection_risk, 4),
+        "tactical_overlay_bps": overlay_bps,
+        "action": action,
+        "data_confidence": round(confidence, 4),
+        "top_driver": daily_signal.get("top_driver", "climate"),
+        "source_mode": daily_signal.get("source_mode", "NWS signal"),
+        "hazards": sorted(hazard_rows, key=lambda row: row["risk_contribution"], reverse=True),
+    }
+
+
+def climate_model_lab_payload(scope="portfolio", target="current_policies", reference="baseline", horizon=2050, sector="Technology", ticker="AAPL"):
+    target_key = target if target in CLIMATE_SCENARIO_PATHS else "current_policies"
+    reference_key = reference if reference in CLIMATE_SCENARIO_PATHS else "baseline"
+    horizon = int(clamp(safe_float(horizon, 2050), max(CURRENT_YEAR + 1, 2030), 2050))
+    daily_signal = load_daily_climate_signal()
+    context = climate_data_context()
+    state = climate_state_variables(daily_signal=daily_signal, context=context)
+    scope_key, scope_rows = climate_model_scope_rows(scope, sector=sector, ticker=ticker, daily_signal=daily_signal)
+    target_scenario = CLIMATE_SCENARIO_PATHS[target_key]
+    reference_scenario = CLIMATE_SCENARIO_PATHS[reference_key]
+    long_term = scenario_repricing_for_scope(scope_rows, target_scenario, reference_scenario, horizon)
+    short_term = event_nowcast_for_scope(scope_rows, daily_signal, state)
+    scope_labels = {
+        "country": "United States country-level stress",
+        "sector": f"{normalize_model_sector(sector)} sector",
+        "issuer": f"{yahoo_symbol(ticker or 'AAPL')} issuer proxy",
+        "portfolio": "Current climate portfolio",
+    }
+    resolution = [
+        {"level": "Country", "input": "NGFS-style acute/chronic GDP and macro paths", "status": "Scenario calibration", "output": "Country cash-flow shock"},
+        {"level": "Sector", "input": "Fixed assets, labor intensity, macro earnings beta", "status": "Sector calibration", "output": "Sector value-added shock"},
+        {"level": "Issuer", "input": "Sector median plus issuer vulnerability ratio", "status": "Proxy until facility/revenue data", "output": "Issuer cash-flow and value impact"},
+        {"level": "Portfolio", "input": "Current holding weights", "status": "Model portfolio", "output": "Weighted impact and risk attribution"},
+    ]
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "scope": scope_key,
+        "scope_label": scope_labels[scope_key],
+        "target_key": target_key,
+        "target": {**target_scenario, "key": target_key},
+        "reference_key": reference_key,
+        "reference": {**reference_scenario, "key": reference_key},
+        "horizon": horizon,
+        "sector": normalize_model_sector(sector),
+        "ticker": yahoo_symbol(ticker or "AAPL"),
+        "long_term": long_term,
+        "short_term": short_term,
+        "climate_state": state,
+        "scope_resolution": resolution,
+        "methodology": {
+            "long_term": "Target scenario minus reference scenario, downscaled country -> sector -> issuer, then discounted into an as-of-date value impact.",
+            "short_term": "NWS hazard intensity x sector exposure beta x vulnerability, translated into selection risk and a tactical weight overlay.",
+            "probability_rule": "Scenario outputs are conditional stresses. The model does not assign occurrence probabilities to NGFS-style scenarios.",
+            "tail_rule": "Scenario tail is reported separately from physical and transition pressure to avoid double counting in the client risk score.",
+        },
+        "calibration_notice": "Prototype calibration inspired by the uploaded Bloomberg workflow. Scenario paths, sector medians, and issuer ratios are transparent replaceable proxies, not Bloomberg data or investment advice.",
+    }
+
+
 def issuer_exposure_model(symbol, asset_type, sector, climate_risk, transition, state, stats):
     sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, 0.50)
     if symbol in SECTOR_ETFS:
@@ -1810,27 +2287,6 @@ def issuer_exposure_model(symbol, asset_type, sector, climate_risk, transition, 
         "data_confidence": round(confidence, 4),
         "sensitivity": round(sensitivity, 4),
     }
-
-
-def scenario_probability_adjustments(state):
-    acute = state["acute_hazard_state"]
-    transition = state["macro_transition_state"]
-    chronic = state["chronic_climate_state"]
-    raw = {}
-    for scenario in CLIMATE_SCENARIOS:
-        name = scenario["name"].lower()
-        base = max(0.01, safe_float(scenario.get("probability"), 0.20))
-        if "hot" in name or "physical" in name:
-            score = base * (1 + 0.55 * acute + 0.45 * chronic)
-        elif "disorder" in name:
-            score = base * (1 + 0.70 * transition + 0.20 * acute)
-        elif "order" in name:
-            score = base * (1 + 0.38 * transition)
-        else:
-            score = base * (1 + 0.30 * acute + 0.30 * transition)
-        raw[scenario["name"]] = score
-    total = sum(raw.values()) or 1.0
-    return {k: round(v / total, 4) for k, v in raw.items()}
 
 
 def historical_climate_pressure_for_year(year, climate_rows=None):
@@ -1883,7 +2339,11 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
     chronic_physical = state["chronic_climate_state"]
     physical_score = clamp(0.58 * acute_physical + 0.42 * chronic_physical, 0.0, 1.0)
     macro_transition = state["macro_transition_state"]
-    cvor_score = clamp(safe_float(cvor_summary.get("cvor_95_loss_rate"), 0.0) / 0.12, 0.0, 1.0)
+    scenario_tail_loss = safe_float(
+        cvor_summary.get("scenario_tail_loss_rate"),
+        safe_float(cvor_summary.get("cvor_95_loss_rate"), 0.0),
+    )
+    scenario_tail_score = clamp(scenario_tail_loss / 0.12, 0.0, 1.0)
     transition_weighted = macro_transition
     top_affected = []
     if latest_alloc:
@@ -1895,7 +2355,7 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
             transition = sector_transition_profile(sector)
             sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, safe_float(SECTOR_ETFS.get(row.get("ticker"), {}).get("physical"), 0.50))
             physical = clamp(0.48 * safe_float(row.get("daily_sector_stress"), physical_score) + 0.34 * sensitivity * physical_score + 0.18 * chronic_physical, 0.0, 1.0)
-            combined = clamp(0.42 * physical + 0.32 * transition["risk"] + 0.16 * safe_float(row.get("climate_weight"), 0.0) + 0.10 * cvor_score, 0.0, 1.0)
+            combined = clamp(0.52 * physical + 0.48 * transition["risk"], 0.0, 1.0)
             transition_weighted += weight * transition["risk"]
             if combined >= 0.28:
                 top_affected.append(
@@ -1911,38 +2371,42 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
                     }
                 )
     transition_score = clamp(0.58 * transition_weighted + 0.42 * macro_transition, 0.0, 1.0)
-    total_score = clamp(0.40 * physical_score + 0.34 * transition_score + 0.26 * cvor_score, 0.0, 1.0)
+    pressure_score = clamp(0.55 * physical_score + 0.45 * transition_score, 0.0, 1.0)
+    decision_score = max(pressure_score, 0.80 * scenario_tail_score)
     source_rows = climate_source_rows(daily_signal=daily_signal, context=context)
     live_inputs = sum(1 for r in source_rows if "input" in r["model_mode"].lower())
     confidence = clamp(0.40 * state["data_confidence"] + 0.08 * live_inputs + 0.08 * (1 if latest_alloc else 0), 0.0, 0.95)
     top_affected = sorted(top_affected, key=lambda r: r["combined_risk"], reverse=True)[:6]
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "risk_level": "High" if total_score >= 0.66 else ("Elevated" if total_score >= 0.44 else "Watch"),
-        "total_score": round(total_score, 4),
+        "risk_level": "High" if decision_score >= 0.66 else ("Elevated" if decision_score >= 0.44 else "Watch"),
+        "total_score": round(pressure_score, 4),
+        "decision_score": round(decision_score, 4),
         "physical_score": round(physical_score, 4),
         "acute_physical_score": round(acute_physical, 4),
         "chronic_physical_score": round(chronic_physical, 4),
         "transition_score": round(transition_score, 4),
         "macro_transition_score": round(macro_transition, 4),
-        "cvor_score": round(cvor_score, 4),
+        "cvor_score": round(scenario_tail_score, 4),
+        "scenario_tail_score": round(scenario_tail_score, 4),
+        "scenario_tail_loss_rate": round(scenario_tail_loss, 4),
         "confidence": round(confidence, 4),
         "climate_state": state,
         "methodology_stack": [
-            {"step": "Data states", "output": "Acute hazard, chronic climate, macro transition, data confidence"},
-            {"step": "Exposure mapping", "output": "Sector/issuer sensitivity converts climate states into holding-level pressure"},
-            {"step": "Portfolio scoring", "output": "Base alpha + climate alpha - risk penalty - CVOR penalty"},
-            {"step": "Risk readout", "output": "CVOR expected-shortfall proxy plus scenario probability adjustment"},
-            {"step": "Validation", "output": "Same-pick backtest, market-only ablation, and future walk-forward test"},
+            {"step": "Country scenarios", "output": "Target minus reference acute, chronic, and transition paths"},
+            {"step": "Downscaling", "output": "Sector vulnerability plus issuer fixed-asset and labor-intensity proxies"},
+            {"step": "Valuation", "output": "Climate-adjusted cash flows discounted into an as-of-date value impact"},
+            {"step": "Event nowcast", "output": "NWS hazard intensity becomes a separate tactical selection overlay"},
+            {"step": "Validation", "output": "Walk-forward backtest, market-only ablation, and parameter sensitivity"},
         ],
         "headline": (
             f"{daily_signal.get('top_driver', 'climate').replace('_', ' ')} is the top daily driver; "
             f"transition pressure is {'high' if transition_score >= 0.62 else 'moderate' if transition_score >= 0.38 else 'low'}."
         ),
         "client_action": (
-            "Reduce climate concentration and keep hedge sleeve active"
-            if total_score >= 0.66
-            else ("Hold core exposures, raise monitoring on affected sectors" if total_score >= 0.44 else "Maintain allocation with routine monitoring")
+            "Reduce climate concentration and keep the scenario-tail guardrail active"
+            if decision_score >= 0.66
+            else ("Hold core exposures, raise monitoring on affected sectors" if decision_score >= 0.44 else "Maintain allocation with routine monitoring")
         ),
         "top_affected": top_affected,
         "source_rows": source_rows,
@@ -3313,7 +3777,15 @@ def build_payload():
         "platform": "Jenneson Climate-Finance Trading & Risk Platform",
         "climate_source": "NWS + NASA/NOAA/NCEI official inputs, with FEMA/EPA/EIA/NGFS/SEC source-ready risk mapping",
         "market_source": market_source,
-        "methodology": "Simplified Climate Value at Risk inspired by Dietz et al. (2016)",
+        "methodology": "Target-reference climate scenario repricing plus a separate NWS event-nowcast overlay",
+        "scenario_methodology": {
+            "scope": "Country -> sector -> issuer -> portfolio",
+            "physical_downscaling": "Country acute/chronic losses are scaled by sector vulnerability, then by issuer fixed-asset and labor-intensity ratios.",
+            "transition_downscaling": "Macro earnings sensitivity is separated from business-model transition risk and opportunity.",
+            "valuation": "Scenario-conditioned cash flows are discounted into an as-of-date value impact relative to a chosen reference scenario.",
+            "probability": "No occurrence probabilities are assigned to NGFS-style scenarios.",
+            "short_term": "NWS alerts affect event selection risk and tactical portfolio basis points, not long-run scenario probability.",
+        },
         "method2_methodology": {
             "paper": "Dietz, Bowen, Dixon and Gradwell (2016), 'Climate value at risk' of global financial assets",
             "equation": "Climate VaR = PV(no-damage cash-flow growth path) - PV(climate-damaged cash-flow growth path), divided by PV(no-damage path).",
@@ -3461,7 +3933,31 @@ HTML = r"""<!doctype html>
     details.advanced-box{border:1px solid #dbe3ef;border-radius:8px;background:#fbfdff;padding:8px;margin:8px 0}
     details.advanced-box summary{cursor:pointer;font-weight:850;color:#25324a}
     .auto-universe-note{border:1px solid #dbe3ef;border-radius:8px;background:#f7fbff;padding:9px;color:#52627c;font-size:12px;line-height:1.45;margin:8px 0}
-    @media (max-width:1100px){header{position:relative}.layout{grid-template-columns:1fr}.grid.kpi,.grid.two,.grid.three,.grid.four,.client-summary,.split-table{grid-template-columns:1fr}aside{position:relative;top:0;height:auto}.kpi-value{font-size:21px}table{min-width:760px}}
+    .model-lab-controls{display:grid;grid-template-columns:1.05fr 1.25fr 1.25fr .8fr 1fr 1fr auto;gap:8px;align-items:end}
+    .model-lab-controls label{margin-bottom:4px}
+    .model-lab-controls button{height:36px;white-space:nowrap}
+    .method-flow{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid #dbe3ef;border-radius:8px;background:#f8fbff;margin:10px 0;overflow:hidden}
+    .method-step{padding:10px 11px;min-height:78px;border-right:1px solid #dbe3ef}
+    .method-step:last-child{border-right:0}
+    .method-step .number{font-size:11px;font-weight:850;color:#2563eb;text-transform:uppercase}
+    .method-step .name{font-weight:850;margin-top:4px}
+    .method-step .detail{font-size:11px;color:#66758f;margin-top:3px}
+    .lab-kpi{grid-template-columns:repeat(6,minmax(0,1fr))}
+    .lab-split{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid #e7edf6;border-bottom:1px solid #e7edf6;margin:10px 0}
+    .lab-column{padding:12px 14px 12px 0;min-width:0}
+    .lab-column+ .lab-column{padding-left:14px;border-left:1px solid #e7edf6}
+    .lab-column h3{font-size:14px;margin:0 0 5px}
+    .model-rule{display:flex;gap:12px;align-items:flex-start;background:#f3f7ff;border-left:4px solid #2563eb;padding:9px 11px;margin:10px 0;color:#33415b}
+    .model-rule strong{white-space:nowrap}
+    .attribution-list{display:grid;gap:7px;margin-top:10px}
+    .attribution-row{display:grid;grid-template-columns:150px minmax(0,1fr) 72px;gap:8px;align-items:center;font-size:12px}
+    .attribution-track{height:9px;background:#edf2f7;border-radius:999px;overflow:hidden;position:relative}
+    .attribution-track span{display:block;height:100%;border-radius:999px;background:#d93025}
+    .attribution-track span.positive{background:#078a4f}
+    .lab-status{display:inline-flex;align-items:center;border:1px solid #c9d8ea;border-radius:999px;padding:3px 7px;font-size:11px;color:#52627c;background:#fff}
+    #modelAttributionTable,#modelHazardTable,#modelResolutionTable,#modelInstrumentTable{min-width:720px}
+    @media (max-width:1320px){.model-lab-controls{grid-template-columns:repeat(4,minmax(0,1fr))}.method-flow{grid-template-columns:repeat(3,minmax(0,1fr))}.method-step:nth-child(3){border-right:0}.method-step:nth-child(-n+3){border-bottom:1px solid #dbe3ef}.lab-kpi{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media (max-width:1100px){header{position:relative}.layout{grid-template-columns:1fr}.grid.kpi,.grid.two,.grid.three,.grid.four,.client-summary,.split-table,.lab-split{grid-template-columns:1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.method-flow{grid-template-columns:1fr 1fr}.method-step{border-bottom:1px solid #dbe3ef}.method-step:nth-child(odd){border-right:1px solid #dbe3ef}.method-step:nth-child(even){border-right:0}.lab-column+ .lab-column{padding-left:0;border-left:0}.lab-kpi{grid-template-columns:1fr 1fr}aside{position:relative;top:0;height:auto}.kpi-value{font-size:21px}table{min-width:760px}}
   </style>
 </head>
 <body>
@@ -3476,6 +3972,7 @@ HTML = r"""<!doctype html>
   <aside>
     <nav class="side-nav" aria-label="Dashboard sections">
       <a href="#client-section">Client View <span>Action</span></a>
+      <a href="#model-lab-section">Model Lab <span>Long / Short</span></a>
       <a href="#market-section">Market <span>OHLCV</span></a>
       <a href="#daily-climate-section">Daily Climate <span>Signal</span></a>
       <a href="#climate-data-section">Climate Data <span>Sources</span></a>
@@ -3545,7 +4042,7 @@ HTML = r"""<!doctype html>
       <div class="kpi-card"><div class="kpi-label">Daily Overlay</div><div id="kpiReturn" class="kpi-value">-</div></div>
       <div class="kpi-card"><div class="kpi-label">Top Climate Driver</div><div id="kpiExcess" class="kpi-value">-</div></div>
       <div class="kpi-card"><div class="kpi-label">Climate Data Year</div><div id="kpiDrawdown" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">Portfolio CVOR 95%</div><div id="kpiCvor" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Scenario Tail Proxy</div><div id="kpiCvor" class="kpi-value">-</div></div>
     </section>
 
     <section class="panel" id="client-section">
@@ -3562,6 +4059,122 @@ HTML = r"""<!doctype html>
             <table id="clientSourceTable"></table>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section class="panel" id="model-lab-section">
+      <div class="panel-head"><span>Climate Scenario &amp; Event Lab</span><span id="modelLabTag">Country -> Sector -> Issuer -> Portfolio</span></div>
+      <div class="panel-body">
+        <div class="model-lab-controls">
+          <div>
+            <label for="modelScope">Analysis scope</label>
+            <select id="modelScope" onchange="updateModelControlState()">
+              <option value="portfolio">Portfolio</option>
+              <option value="issuer">Issuer</option>
+              <option value="sector">Sector</option>
+              <option value="country">Country</option>
+            </select>
+          </div>
+          <div>
+            <label for="modelTarget">Target scenario</label>
+            <select id="modelTarget">
+              <option value="current_policies">Current Policies</option>
+              <option value="net_zero_2050">Net Zero 2050</option>
+              <option value="below_2c">Below 2C</option>
+              <option value="delayed_transition">Delayed Transition</option>
+              <option value="fragmented_world">Fragmented World</option>
+            </select>
+          </div>
+          <div>
+            <label for="modelReference">Reference scenario</label>
+            <select id="modelReference">
+              <option value="baseline">Climate-agnostic baseline</option>
+              <option value="current_policies">Current Policies</option>
+              <option value="net_zero_2050">Net Zero 2050</option>
+              <option value="below_2c">Below 2C</option>
+              <option value="delayed_transition">Delayed Transition</option>
+            </select>
+          </div>
+          <div>
+            <label for="modelHorizon">Horizon</label>
+            <select id="modelHorizon">
+              <option value="2030">2030</option>
+              <option value="2040">2040</option>
+              <option value="2050" selected>2050</option>
+            </select>
+          </div>
+          <div>
+            <label for="modelSector">Sector</label>
+            <select id="modelSector">
+              <option value="Technology">Technology</option>
+              <option value="Energy">Energy</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Industrials">Industrials</option>
+              <option value="Financials">Financials</option>
+              <option value="Real Estate">Real Estate</option>
+              <option value="Basic Materials">Basic Materials</option>
+              <option value="Consumer Cyclical">Consumer Cyclical</option>
+              <option value="Consumer Defensive">Consumer Defensive</option>
+              <option value="Healthcare">Healthcare</option>
+              <option value="Communication Services">Communication Services</option>
+            </select>
+          </div>
+          <div>
+            <label for="modelTicker">Issuer ticker</label>
+            <input id="modelTicker" value="AAPL" maxlength="12">
+          </div>
+          <button onclick="loadClimateModelLab()">Run Model</button>
+        </div>
+
+        <div class="model-rule">
+          <strong>Quant rule</strong>
+          <span>Long-term scenarios are conditional repricing exercises, not forecasts and not occurrence probabilities. NWS alerts feed the short-term event engine only.</span>
+        </div>
+
+        <div class="method-flow" aria-label="Climate model pipeline">
+          <div class="method-step"><div class="number">01 Input</div><div class="name">Target vs reference</div><div class="detail">NGFS-style acute, chronic, macro and demand paths</div></div>
+          <div class="method-step"><div class="number">02 Country</div><div class="name">Economic shock</div><div class="detail">Country GDP and transition pathway delta</div></div>
+          <div class="method-step"><div class="number">03 Sector</div><div class="name">Vulnerability</div><div class="detail">Fixed assets, labor intensity and earnings beta</div></div>
+          <div class="method-step"><div class="number">04 Issuer</div><div class="name">Cash-flow impact</div><div class="detail">Winsorized issuer-to-sector exposure ratio</div></div>
+          <div class="method-step"><div class="number">05 Valuation</div><div class="name">As-of-date repricing</div><div class="detail">Discounted climate-adjusted cash-flow path</div></div>
+          <div class="method-step"><div class="number">06 Decision</div><div class="name">Strategic + tactical</div><div class="detail">Long-term value tilt plus NWS event overlay</div></div>
+        </div>
+
+        <div id="modelLabSummary" class="grid lab-kpi"></div>
+        <div class="lab-split">
+          <div class="lab-column">
+            <h3>Long-term: scenario-conditioned value</h3>
+            <div id="modelLongHeadline" class="hint"></div>
+            <div id="modelLongAttributionBars" class="attribution-list"></div>
+          </div>
+          <div class="lab-column">
+            <h3>Short-term: NWS event nowcast</h3>
+            <div id="modelShortHeadline" class="hint"></div>
+            <div id="modelShortHazardBars" class="attribution-list"></div>
+          </div>
+        </div>
+
+        <div class="split-table">
+          <div>
+            <div class="section-title">Long-Term Value Attribution</div>
+            <table id="modelAttributionTable"></table>
+          </div>
+          <div>
+            <div class="section-title">Short-Term Hazard Transmission</div>
+            <table id="modelHazardTable"></table>
+          </div>
+        </div>
+        <div class="split-table" style="margin-top:12px">
+          <div>
+            <div class="section-title">Largest Security / Sector Impacts</div>
+            <table id="modelInstrumentTable"></table>
+          </div>
+          <div>
+            <div class="section-title">Resolution &amp; Data Honesty</div>
+            <table id="modelResolutionTable"></table>
+          </div>
+        </div>
+        <div id="modelCalibrationNotice" class="hint" style="margin-top:10px"></div>
       </div>
     </section>
 
@@ -3696,7 +4309,7 @@ HTML = r"""<!doctype html>
     </section>
 
     <section class="panel" id="cvor-section">
-      <div class="panel-head"><span>CVOR Scenario Matrix</span><span>Physical + transition + liability risk</span></div>
+      <div class="panel-head"><span>Conditional Scenario Stress Matrix</span><span>Physical + transition + liability | no occurrence probabilities</span></div>
       <div class="panel-body">
         <table id="scenarioTable"></table>
       </div>
@@ -3735,6 +4348,7 @@ let ACTIVE_TICKER = null;
 let OPTIMIZER = null;
 let DAILY_CLIMATE_BOARD = null;
 let DAILY_RECO_BACKTEST = null;
+let CLIMATE_MODEL_LAB = null;
 let RECO_BACKTEST_WINDOW = "3w";
 let TRADING_CHART = null;
 let CHART_LAYERS = {ma:true, ema:true, vwap:true, bands:false, volume:true, macd:false, dark:false};
@@ -3745,6 +4359,7 @@ function fmtMoney(x){ return "$"+Number(x||0).toLocaleString(undefined,{maximumF
 function fmtPrice(x){ const n=Number(x); if(!Number.isFinite(n) || n<=0)return "-"; return "$"+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtVolume(x){ const n=Number(x); if(!Number.isFinite(n) || n<=0)return "-"; if(n>=1e9)return (n/1e9).toFixed(2)+"B"; if(n>=1e6)return (n/1e6).toFixed(2)+"M"; if(n>=1e3)return (n/1e3).toFixed(1)+"K"; return String(Math.round(n)); }
 function fmtBps(x){ const n=Number(x)||0; return (n>0?"+":"") + n.toFixed(0) + " bps"; }
+function fmtSignedPct(x){ const n=Number(x)||0; return (n>0?"+":"") + (n*100).toFixed(2)+"%"; }
 function clsFor(v){ return Number(v)>=0 ? "green" : "red"; }
 function clamp(x, lo, hi){ return Math.max(lo, Math.min(hi, Number(x))); }
 
@@ -3752,12 +4367,110 @@ async function loadDashboard(){
   const res = await fetch("/api/dashboard");
   DASH = await res.json();
   renderDashboard(DASH);
+  await loadClimateModelLab();
   await scanCompanies();
   await loadMarketChart();
   await loadEtfWatchlist();
   await loadDailyClimateBoard();
   await loadDailyRecommendationBacktest();
   await runOptimizer();
+}
+
+function updateModelControlState(){
+  const scope = document.getElementById("modelScope").value;
+  const sector = document.getElementById("modelSector");
+  const ticker = document.getElementById("modelTicker");
+  sector.disabled = scope === "portfolio" || scope === "country";
+  ticker.disabled = scope !== "issuer";
+}
+
+async function loadClimateModelLab(){
+  updateModelControlState();
+  const params = new URLSearchParams({
+    scope: document.getElementById("modelScope").value,
+    target: document.getElementById("modelTarget").value,
+    reference: document.getElementById("modelReference").value,
+    horizon: document.getElementById("modelHorizon").value,
+    sector: document.getElementById("modelSector").value,
+    ticker: document.getElementById("modelTicker").value
+  });
+  const res = await fetch("/api/climate_model_lab?" + params.toString());
+  CLIMATE_MODEL_LAB = await res.json();
+  renderClimateModelLab(CLIMATE_MODEL_LAB);
+}
+
+function renderAttributionBars(targetId, rows, valueKey, labelKey, positiveMeansGood=true){
+  const el = document.getElementById(targetId);
+  if(!el) return;
+  const values = (rows || []).map(r=>Math.abs(Number(r[valueKey] || 0)));
+  const maxAbs = Math.max(...values, 0.0001);
+  el.innerHTML = (rows || []).slice(0,5).map(r=>{
+    const value = Number(r[valueKey] || 0);
+    const good = positiveMeansGood ? value >= 0 : value <= 0;
+    const width = Math.max(3, Math.min(100, Math.abs(value)/maxAbs*100));
+    const display = valueKey.includes("bps") ? fmtBps(value) : fmtSignedPct(value);
+    return `<div class="attribution-row">
+      <span>${r[labelKey] || "-"}</span>
+      <div class="attribution-track"><span class="${good?"positive":""}" style="width:${width}%"></span></div>
+      <b class="${good?"green":"red"}">${display}</b>
+    </div>`;
+  }).join("");
+}
+
+function renderClimateModelLab(d){
+  if(!d || !d.long_term || !d.short_term) return;
+  const lt = d.long_term;
+  const st = d.short_term;
+  const target = d.target || {};
+  const reference = d.reference || {};
+  document.getElementById("modelLabTag").textContent = `${d.scope_label} | ${target.label} vs ${reference.label} | ${d.horizon}`;
+  const summary = document.getElementById("modelLabSummary");
+  summary.innerHTML = [
+    ["Scope", d.scope_label, ""],
+    ["Value impact vs reference", fmtSignedPct(lt.value_impact), clsFor(lt.value_impact)],
+    ["Physical loss delta", fmtSignedPct(lt.physical_loss_delta), clsFor(-lt.physical_loss_delta)],
+    ["Transition loss delta", fmtSignedPct(lt.transition_loss_delta), clsFor(-lt.transition_loss_delta)],
+    ["NWS event risk", fmtPct(st.event_risk), st.event_risk>=.55?"red":(st.event_risk>=.30?"amber":"green")],
+    ["Tactical overlay", fmtBps(st.tactical_overlay_bps), clsFor(st.tactical_overlay_bps)]
+  ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
+
+  const valueDirection = lt.value_impact < 0 ? "lower" : (lt.value_impact > 0 ? "higher" : "unchanged");
+  document.getElementById("modelLongHeadline").innerHTML = `If markets reprice from <b>${reference.label}</b> to <b>${target.label}</b>, the model values this ${d.scope} <b>${Math.abs(lt.value_impact*100).toFixed(2)}%</b> ${valueDirection}. This is a conditional valuation delta, not a forecast probability.`;
+  document.getElementById("modelShortHeadline").innerHTML = `<b>${String(st.top_driver || "climate").replace("_"," ")}</b> is the dominant live driver. Event risk is ${fmtPct(st.event_risk)}, producing <b>${st.action}</b> at ${fmtBps(st.tactical_overlay_bps)} with ${fmtPct(st.data_confidence)} data confidence.`;
+
+  renderAttributionBars("modelLongAttributionBars", lt.attribution || [], "value_contribution", "label", true);
+  renderAttributionBars("modelShortHazardBars", (st.hazards || []).slice(0,5), "risk_contribution", "label", false);
+
+  const attrTable = document.getElementById("modelAttributionTable");
+  attrTable.innerHTML = `<tr><th>Component</th><th>Target loss</th><th>Reference loss</th><th>Loss delta</th><th>Value contribution</th></tr>` +
+    (lt.attribution || []).map(r=>`<tr>
+      <td><b>${r.label}</b></td><td>${fmtPct(r.target_loss)}</td><td>${fmtPct(r.reference_loss)}</td>
+      <td class="${clsFor(-r.loss_delta)}">${fmtSignedPct(r.loss_delta)}</td>
+      <td class="${clsFor(r.value_contribution)}"><b>${fmtSignedPct(r.value_contribution)}</b></td>
+    </tr>`).join("");
+
+  const hazardTable = document.getElementById("modelHazardTable");
+  hazardTable.innerHTML = `<tr><th>Hazard</th><th>NWS intensity</th><th>Exposure beta</th><th>Risk contribution</th><th>Dominant exposure</th></tr>` +
+    (st.hazards || []).map(r=>`<tr>
+      <td><b>${r.label}</b></td><td>${fmtPct(r.intensity)}</td><td>${Number(r.exposure_beta||0).toFixed(2)}</td>
+      <td class="amber">${fmtPct(r.risk_contribution)}</td><td>${r.dominant_exposure}</td>
+    </tr>`).join("");
+
+  const instrumentTable = document.getElementById("modelInstrumentTable");
+  instrumentTable.innerHTML = `<tr><th>Name</th><th>Sector</th><th>Weight</th><th>Value impact</th><th>Acute ratio</th><th>Chronic ratio</th><th>Data</th></tr>` +
+    (lt.instruments || []).slice(0,8).map(r=>`<tr>
+      <td><b>${r.name}</b></td><td>${r.sector}</td><td>${fmtPct(r.weight)}</td>
+      <td class="${clsFor(r.value_impact)}"><b>${fmtSignedPct(r.value_impact)}</b></td>
+      <td>${Number(r.acute_ratio||0).toFixed(2)}x</td><td>${Number(r.chronic_ratio||0).toFixed(2)}x</td>
+      <td><span class="lab-status">${r.data_quality || "Proxy"}</span></td>
+    </tr>`).join("");
+
+  const resolutionTable = document.getElementById("modelResolutionTable");
+  resolutionTable.innerHTML = `<tr><th>Level</th><th>Model input</th><th>Status</th><th>Output</th></tr>` +
+    (d.scope_resolution || []).map(r=>`<tr>
+      <td><b>${r.level}</b></td><td>${r.input}</td><td><span class="lab-status">${r.status}</span></td><td>${r.output}</td>
+    </tr>`).join("");
+  document.getElementById("modelCalibrationNotice").textContent = `${d.calibration_notice} ${d.methodology.probability_rule} ${d.methodology.tail_rule}`;
 }
 
 async function loadMarketChart(){
@@ -4034,7 +4747,7 @@ function renderClientClimateIntelligence(ci){
   const summary = document.getElementById("clientSummary");
   if(!summary) return;
   const riskClass = ci.risk_level === "High" ? "red" : (ci.risk_level === "Elevated" ? "amber" : "green");
-  document.getElementById("clientSummaryTag").textContent = `${ci.risk_level || "Watch"} | Confidence ${fmtPct(ci.confidence || 0)}`;
+  document.getElementById("clientSummaryTag").textContent = `${ci.risk_level || "Watch"} | pressure + independent tail guardrail | confidence ${fmtPct(ci.confidence || 0)}`;
   const state = ci.climate_state || {};
   const stack = ci.methodology_stack || [];
   summary.innerHTML = `
@@ -4042,13 +4755,13 @@ function renderClientClimateIntelligence(ci){
       <div class="title">Client Action</div>
       <div class="headline ${riskClass}">${ci.risk_level || "Watch"}</div>
       <div>${ci.client_action || "-"}</div>
-      ${renderScoreBar(ci.total_score || 0)}
+      ${renderScoreBar(ci.decision_score || ci.total_score || 0)}
       <div class="hint" style="margin-top:8px">${ci.headline || ""}</div>
     </div>
     <div class="grid two">
-      <div class="signal-card"><div class="label">Physical risk</div><div class="value ${clsFor((ci.physical_score || 0) - .44)}">${fmtPct(ci.physical_score || 0)}</div>${renderScoreBar(ci.physical_score || 0)}</div>
-      <div class="signal-card"><div class="label">Transition risk</div><div class="value ${clsFor((ci.transition_score || 0) - .44)}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}</div>
-      <div class="signal-card"><div class="label">CVOR contribution</div><div class="value amber">${fmtPct(ci.cvor_score || 0)}</div>${renderScoreBar(ci.cvor_score || 0)}</div>
+      <div class="signal-card"><div class="label">Physical pressure score</div><div class="value ${clsFor((ci.physical_score || 0) - .44)}">${fmtPct(ci.physical_score || 0)}</div>${renderScoreBar(ci.physical_score || 0)}<div class="hint">Scaled severity, not probability</div></div>
+      <div class="signal-card"><div class="label">Transition pressure score</div><div class="value ${clsFor((ci.transition_score || 0) - .44)}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}<div class="hint">Scaled severity, not probability</div></div>
+      <div class="signal-card"><div class="label">Scenario tail loss</div><div class="value amber">${fmtPct(ci.scenario_tail_loss_rate || 0)}</div>${renderScoreBar(ci.scenario_tail_score || 0)}<div class="hint">Mean of two worst conditional stresses</div></div>
       <div class="signal-card"><div class="label">Data confidence</div><div class="value blue">${fmtPct(ci.confidence || 0)}</div>${renderScoreBar(ci.confidence || 0)}</div>
     </div>
     <div class="grid four" style="margin-top:10px">
@@ -4099,7 +4812,7 @@ function renderDashboard(d){
   document.getElementById("kpiExcess").className = "kpi-value amber";
   document.getElementById("kpiDrawdown").textContent = d.climate_data_context.latest_year || "-";
   document.getElementById("kpiDrawdown").className = "kpi-value blue";
-  document.getElementById("kpiCvor").textContent = fmtPct(d.cvor_summary.cvor_95_loss_rate);
+  document.getElementById("kpiCvor").textContent = fmtPct(d.cvor_summary.scenario_tail_loss_rate || d.cvor_summary.cvor_95_loss_rate);
   document.getElementById("kpiCvor").className = "kpi-value amber";
   renderClientClimateIntelligence(d.climate_intelligence || {});
   renderAllocation(d.latest_allocation);
@@ -4195,12 +4908,12 @@ function renderAllocation(rows){
 
 function renderScenarios(rows){
   const table = document.getElementById("scenarioTable");
-  table.innerHTML = `<tr><th>Scenario</th><th>Adjusted Probability</th><th>Carbon Price</th><th>Portfolio Loss</th><th>Loss Dollars</th><th>Largest Sector Loss</th><th>Narrative</th></tr>` +
+  table.innerHTML = `<tr><th>Scenario</th><th>Interpretation</th><th>Carbon Price</th><th>Portfolio Loss</th><th>Loss Dollars</th><th>Largest Sector Loss</th><th>Narrative</th></tr>` +
     rows.map(r=>{
       const losses = Object.entries(r.sector_losses || {}).sort((a,b)=>b[1]-a[1]);
       const top = losses.length ? `${losses[0][0]} ${fmtPct(losses[0][1])}` : "-";
       return `<tr>
-        <td><b>${r.scenario}</b></td><td>${fmtPct(r.probability)}<br><span class="hint">base ${fmtPct(r.base_probability || r.probability)}</span></td><td>$${r.carbon_price}/tCO2e</td>
+        <td><b>${r.scenario}</b></td><td><span class="pill info">${r.scenario_type || "Conditional stress"}</span><br><span class="hint">No occurrence probability assigned</span></td><td>$${r.carbon_price}/tCO2e</td>
         <td class="red">${fmtPct(r.portfolio_loss_rate)}</td><td>${fmtMoney(r.portfolio_loss_dollars)}</td>
         <td>${top}</td><td>${r.narrative}</td>
       </tr>`;
@@ -4977,6 +5690,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/climate_intelligence":
             self._send_json(climate_intelligence_payload())
+            return
+        if parsed.path == "/api/climate_model_lab":
+            q = parse_qs(parsed.query, keep_blank_values=True)
+            self._send_json(
+                climate_model_lab_payload(
+                    scope=q.get("scope", ["portfolio"])[0],
+                    target=q.get("target", ["current_policies"])[0],
+                    reference=q.get("reference", ["baseline"])[0],
+                    horizon=q.get("horizon", ["2050"])[0],
+                    sector=q.get("sector", ["Technology"])[0],
+                    ticker=q.get("ticker", ["AAPL"])[0],
+                )
+            )
             return
         if parsed.path == "/api/company_scan":
             q = parse_qs(parsed.query)
