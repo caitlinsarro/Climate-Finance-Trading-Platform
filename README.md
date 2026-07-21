@@ -16,15 +16,15 @@ Institutional U.S.-listed climate-finance research workspace for portfolio decis
 - Configurable trading and short-borrow costs with net and gross return, compounded cost drag, turnover, drawdown, hit rate, and information-ratio reporting
 - Climate Signals, Data Lineage & Coverage view combining NWS, NASA GISTEMP, NOAA GML CO2, NCEI disasters, allocation transmission, source status, and known data gaps
 - Explicit separation of observed inputs, calibrated proxies, and missing facility/revenue/supply-chain data
-- Company-level Method 2 Climate VaR scanner with BAU vs 2C comparison, P95/P99/CVOR95, market-cap context, and data-quality labels
-- Automatic climate universe ranked from market behavior, live climate conditions, sector transmission, issuer resilience, and Method 2 tail risk
+- Company-level Method 2 Climate VaR scanner with BAU vs 2C comparison, P95/P99/tail-mean-95, market-cap context, and data-quality labels
+- Automatic climate universe ranked from market behavior, live climate conditions, sector transmission, issuer resilience, and conditional scenario loss
 - Institutional, responsive UI focused on decision, attribution, risk budget, and validation rather than generic quote or chart screens
 
 ## Validation discipline
 
 The validation view evaluates the same universe selected by the portfolio optimizer. Each historical signal date ranks assets using information available up to that date, applies the buy and sell sleeves for the next trading day, and deducts modeled trading and borrow costs. The 3-week result is directional, the 3-month result is the default tactical evidence window, and the 3-year result provides longer-horizon context.
 
-Historical market features are point-in-time. Climate calibration is lagged by year, but the prototype does not reconstruct a complete archived daily NWS alert tape. Reported results therefore remain research evidence rather than a production performance claim, and they exclude market impact, taxes, financing, and security-level locate constraints.
+Historical market features are point-in-time. Annual climate features use expanding-window normalization and the latest completed calendar-year vintage. The signal holds a 100% long sleeve and a 25% short sleeve, so its 75% net risky exposure is compared with a 75% equal-weight universe plus 25% cash. The prototype does not reconstruct a complete archived daily NWS alert tape or survivorship-free historical constituents. Reported results therefore remain research evidence rather than a production performance claim, and they exclude market impact, taxes, financing, and security-level locate constraints.
 
 ## U.S. Market Assumptions
 
@@ -35,16 +35,16 @@ Historical market features are point-in-time. Climate calibration is lagged by y
 
 ## Method 2 Alignment
 
-The issuer CVOR scanner follows the logic of Dietz, Bowen, Dixon and Gradwell (2016), "Climate value at risk of global financial assets":
+The issuer valuation scanner follows the logic of Dietz, Bowen, Dixon and Gradwell (2016), "Climate value at risk of global financial assets":
 
 - Compare the present value of a no-climate-damage cash-flow path with a climate-damaged path
 - Express Climate VaR as the PV loss divided by the no-damage PV
 - Use private-investor discounting rather than social discounting
 - Use a DICE-style damage function: `g(T)=0.0028*T^2+(alpha3*T)^7`
 - Sample uncertainty in productivity growth, climate sensitivity, and damage curvature
-- Report mean, P95, P99, and CVOR95 tail expected loss for each issuer
-- Report how much a 2C pathway reduces issuer P95/CVOR95 climate-impact risk
-- Use current official climate inputs to set the current warming level and climate pressure multiplier
+- Report mean, P95, P99, and the empirical mean of losses at or above P95 for each issuer
+- Report how much a 2C pathway reduces issuer P95 and tail-mean-95 climate-impact risk
+- Use official current warming as the observed starting point; keep CO2, disaster, and NWS signals in separate modules so they are not counted twice in the valuation path
 
 This is still a company-level approximation because true Method 2 DICE runs are global and require full IAM scenario paths. The platform maps the global method to U.S. issuers through sector sensitivity, beta, market capitalization, and available growth data.
 
@@ -52,13 +52,15 @@ This is still a company-level approximation because true Method 2 DICE runs are 
 
 The platform now separates strategic climate valuation from tactical event risk:
 
-- `Long-term`: choose a target and reference scenario. Country-level acute, chronic, and macro transition shocks are downscaled to sectors, then to issuers using transparent fixed-asset, labor-intensity, and earnings-sensitivity proxies. Climate-adjusted cash flows are discounted into an as-of-date value impact.
-- `Short-term`: NWS alert intensity is combined with hazard-specific sector exposure and issuer vulnerability. The output is event selection risk and a tactical portfolio overlay in basis points.
+- `Long-term`: choose a target and reference scenario. Country-level acute, chronic, and macro transition shocks are downscaled to sectors, then to issuers using transparent fixed-asset, labor-intensity, and earnings-sensitivity proxies. Climate-adjusted cash flows are discounted into an as-of-date value impact. Nonlinear DCF attribution uses exact four-factor Shapley values.
+- `Short-term`: NWS event pressure is multiplied by the observed hazard mix and hazard-specific sector beta. The portfolio tilt is centered to be zero-sum around strategic weights and scaled so no holding moves more than 250 basis points in one daily overlay. No hazard mix means no tactical trade.
 - `Scope`: the same chain can be read at country, sector, issuer, or current-portfolio level.
 - `Scenario rule`: NGFS-style scenarios are conditional stresses, not forecasts. The model does not assign occurrence probabilities to them.
 - `Tail rule`: the mean of the two largest portfolio scenario losses is labeled a scenario-tail proxy, not regulatory Expected Shortfall. It is kept separate from physical and transition pressure to avoid double counting.
 
 The scenario paths, sector medians, and issuer vulnerability ratios in this prototype are documented, replaceable calibrations. They are not Bloomberg data. A production implementation should replace issuer proxies with geolocated facilities, revenue segmentation, supply-chain links, and licensed NGFS or vendor scenario data.
+
+The physical downscaling follows the structure described in the supplied Bloomberg methodology: sector loss equals country loss multiplied by sector vulnerability divided by the economy-weighted average vulnerability; issuer loss then applies a bounded issuer-to-sector vulnerability ratio. Covered-sector value-added weights reconcile the weighted sector multiplier to exactly `1.0`. The app exposes this check, portfolio-weight reconciliation, target/reference present values, and Shapley residuals in the Calculation Ledger.
 
 ## Portfolio Optimizer
 
@@ -68,17 +70,17 @@ The optimizer is designed for an asset-investor workflow:
 - `ETF + stock`: uses ETFs as the core sleeve and single stocks as satellite positions
 - `Stock only`: allocates only across selected U.S.-listed companies
 - `Short-term`: uses today's 1-minute intraday bars, momentum, volatility, liquidity, and the current climate alert overlay
-- `Long-term`: uses recent daily trend, structural climate resilience, and Method 2 issuer CVOR
+- `Long-term`: uses recent daily trend, structural climate resilience, and target-versus-reference scenario loss
 - `Balanced`: mixes market trend, climate score, and volatility control
-- `Climate defense`: gives more weight to lower Climate VaR and resilient sectors
+- `Climate defense`: gives more weight to lower conditional climate loss and resilient sectors
 - `Growth`: gives more weight to market momentum and single-name upside
 - `Low volatility`: reduces high-volatility and high-tail-risk exposure
 
 By default, the optimizer uses an automatic climate universe. It ranks climate-related ETFs and stocks from the daily climate relation signal, broad-market anchors, and sector physical/transition risk profiles. Advanced users can still override the ETF and stock candidate lists manually.
 
-For each asset, the optimizer estimates a score from market behavior, physical climate risk, transition risk, Method 2/CVOR proxy, and volatility, then converts it into a portfolio weight. It multiplies the weight by the selected capital amount to show target dollars and estimated shares.
+For each asset, the optimizer separates base alpha, climate alpha, volatility/confidence control, and conditional scenario-tail loss. Within each ETF or stock sleeve, it solves a bounded proportional allocation equivalent to maximizing `sum(priority_i * log(weight_i))` subject to the sleeve budget and effective confidence caps. The market-only ablation uses the same sleeves and caps, so climate active weight is directly comparable. Capital only converts the reconciled weight into target dollars and estimated shares.
 
-The climate buy/sell backtest is a walk-forward test over the current optimizer-selected universe. Each historical signal date uses only information available before the next trading day, forms a climate-resilient buy book and a climate-vulnerable sell/underweight book, and compares the resulting overlay with the equal-weight universe over 3-week, 3-month, and 3-year windows. Capital affects dollar sizing, while return evidence remains capital-independent.
+The climate buy/sell backtest is a conditional walk-forward replay over the current optimizer-selected universe. Each historical signal date uses only information available before the next trading day, forms a climate-resilient buy book and a climate-vulnerable sell/underweight book, and compares the resulting overlay with an exposure-matched benchmark over 3-week, 3-month, and 3-year windows. Capital affects dollar sizing, while return evidence remains capital-independent.
 
 ## Climate Data Sources
 

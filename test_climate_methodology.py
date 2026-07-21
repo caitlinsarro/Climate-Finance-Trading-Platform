@@ -45,6 +45,19 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertGreater(energy["micro_transition"], 0.0)
         self.assertLess(technology["micro_transition"], 0.0)
 
+    def test_method2_tail_and_mitigation_ordering(self):
+        info = {
+            "sector": "Technology",
+            "marketCap": 1_000_000_000,
+            "beta": 1.0,
+            "revenueGrowth": 0.03,
+            "shortName": "Test Issuer",
+        }
+        result = app.method2_company_cvor("TEST", info=info, draws=200)
+        self.assertGreaterEqual(result["method2_cvor95_pct"], result["method2_p95_pct"])
+        self.assertGreaterEqual(result["method2_p95_pct"], result["method2_mean_pct"])
+        self.assertGreaterEqual(result["method2_p95_pct"], result["method2_2c_p95_pct"])
+
     def test_value_attribution_reconciles_to_total(self):
         result = app.scenario_repricing_for_scope(
             [self.energy],
@@ -54,6 +67,48 @@ class ClimateMethodologyTests(unittest.TestCase):
         )
         contribution = sum(row["value_contribution"] for row in result["attribution"])
         self.assertAlmostEqual(contribution, result["value_impact"], places=3)
+        self.assertAlmostEqual(result["attribution_residual"], 0.0, places=7)
+
+    def test_physical_downscaling_conserves_country_loss(self):
+        weights = app.normalized_sector_value_added_weights()
+        self.assertAlmostEqual(sum(weights.values()), 1.0, places=12)
+        reconciliation = app.physical_downscaling_reconciliation()
+        self.assertAlmostEqual(reconciliation["acute"], 1.0, places=12)
+        self.assertAlmostEqual(reconciliation["chronic"], 1.0, places=12)
+
+    def test_unknown_issuer_uses_sector_median_fallback(self):
+        first = app.issuer_vulnerability_profile("UNKNOWN1", "Technology")
+        second = app.issuer_vulnerability_profile("UNKNOWN2", "Technology")
+        self.assertEqual(first, second)
+        self.assertEqual(first["acute_ratio"], 1.0)
+        self.assertEqual(first["chronic_ratio"], 1.0)
+        self.assertEqual(first["quality"], "Sector median fallback")
+
+    def test_expanding_zscore_is_invariant_to_future_append(self):
+        prefix = [1.0, 2.0, 4.0, 3.0]
+        extended = prefix + [100.0, -50.0]
+        self.assertAlmostEqual(
+            app.expanding_zscore(prefix, len(prefix) - 1),
+            app.expanding_zscore(extended, len(prefix) - 1),
+            places=12,
+        )
+
+    def test_historical_climate_pressure_uses_only_prior_vintages(self):
+        rows = [
+            {"year": 2024, "climate_risk_score": 1.0},
+            {"year": 2025, "climate_risk_score": 100.0},
+        ]
+        self.assertEqual(app.historical_climate_pressure_for_year(2025, rows), 0.5)
+        self.assertGreater(app.historical_climate_pressure_for_year(2026, rows), 0.5)
+
+    def test_regime_fallback_never_uses_future_vintage(self):
+        rows = [
+            {"year": 2025, "risk_state": "High Climate Risk", "climate_risk_score": 2.0},
+            {"year": 2027, "risk_state": "High Climate Risk", "climate_risk_score": 3.0},
+        ]
+        result = app.regime_for_year(2024, rows)
+        self.assertEqual(result["signal_year"], 2023)
+        self.assertEqual(result["regime"], "Normal Climate Risk")
 
     def test_scenario_matrix_does_not_claim_probabilities(self):
         allocation = [
@@ -64,6 +119,51 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertTrue(rows)
         self.assertTrue(all("probability" not in row for row in rows))
         self.assertIn("No occurrence probabilities", summary["scenario_probability_method"])
+        self.assertNotIn("cvor_95", summary)
+        self.assertEqual(summary["tail_count"], app.SCENARIO_TAIL_COUNT)
+
+    def test_daily_overlay_is_zero_sum_hazard_specific_and_capped(self):
+        base_rows = [
+            {"year": 2026, "ticker": ticker, "sector": app.SECTOR_ETFS[ticker]["name"], "climate_weight": 0.20, "benchmark_weight": 0.20}
+            for ticker in ["XLK", "XLE", "XLU", "XLI", "XLF"]
+        ]
+        signal = {
+            "daily_pressure": 0.80,
+            "allocation_pressure": 0.90,
+            "top_driver": "heat",
+            "category_intensity": {"heat": 1.0},
+        }
+        adjusted = app.apply_daily_climate_overlay(base_rows, signal)
+        self.assertAlmostEqual(sum(row["climate_weight"] for row in adjusted), 1.0, places=3)
+        self.assertLessEqual(max(abs(row["daily_adjustment_bps"]) for row in adjusted), app.TACTICAL_OVERLAY_LIMIT_BPS)
+        by_ticker = {row["ticker"]: row for row in adjusted}
+        self.assertGreater(by_ticker["XLK"]["daily_hazard_beta"], 0.0)
+        self.assertLess(by_ticker["XLK"]["daily_hazard_beta"], by_ticker["XLU"]["daily_hazard_beta"])
+        self.assertGreater(by_ticker["XLK"]["daily_adjustment_bps"], by_ticker["XLU"]["daily_adjustment_bps"])
+
+    def test_daily_overlay_does_not_trade_without_hazard_mix(self):
+        base_rows = [
+            {"year": 2026, "ticker": ticker, "sector": app.SECTOR_ETFS[ticker]["name"], "climate_weight": 0.20, "benchmark_weight": 0.20}
+            for ticker in ["XLK", "XLE", "XLU", "XLI", "XLF"]
+        ]
+        adjusted = app.apply_daily_climate_overlay(
+            base_rows,
+            {"daily_pressure": 0.80, "allocation_pressure": 0.90, "top_driver": "fallback", "category_intensity": {}},
+        )
+        self.assertTrue(all(row["daily_adjustment_bps"] == 0 for row in adjusted))
+
+    def test_bounded_priority_allocation_respects_budget_and_effective_caps(self):
+        rows = [
+            {"ticker": "A", "priority": 4.0, "confidence_cap": 0.45},
+            {"ticker": "B", "priority": 2.0, "confidence_cap": 0.35},
+            {"ticker": "C", "priority": 1.0, "confidence_cap": 0.30},
+        ]
+        weights, caps = app.bounded_priority_allocation(rows, 1.0, "priority")
+        self.assertAlmostEqual(sum(weights.values()), 1.0, places=10)
+        for ticker, weight in weights.items():
+            self.assertLessEqual(weight, caps[ticker] + 1e-12)
+        self.assertGreaterEqual(weights["A"], weights["B"])
+        self.assertGreaterEqual(weights["B"], weights["C"])
 
     def test_optimizer_risk_budget_reconciles_with_weights(self):
         daily_signal = {
@@ -109,7 +209,10 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertAlmostEqual(sum(weights), 1.0, places=3)
         self.assertAlmostEqual(budget["hhi"], expected_hhi, places=3)
         self.assertAlmostEqual(budget["effective_positions"], 1 / expected_hhi, places=1)
-        self.assertEqual(len(budget["checks"]), 4)
+        self.assertEqual(len(budget["checks"]), 5)
+        self.assertEqual(budget["effective_cap_breaches"], 0)
+        self.assertTrue(all("cvor_proxy" not in row for row in result["rows"]))
+        self.assertTrue(all("scenario_tail_proxy" in row for row in result["rows"]))
 
     def test_walk_forward_backtest_reports_net_cost_and_turnover(self):
         dates = [f"2026-{1 + index // 28:02d}-{1 + index % 28:02d}" for index in range(50)]
@@ -132,6 +235,13 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertGreater(rows[0]["turnover"], 0)
         self.assertGreater(rows[0]["total_cost"], 0)
         self.assertLess(rows[0]["recommended_return"], rows[0]["gross_recommended_return"])
+        self.assertEqual(rows[0]["benchmark_exposure"], 0.75)
+        self.assertEqual(rows[0]["cash_weight"], 0.25)
+        self.assertAlmostEqual(
+            rows[0]["benchmark_return"],
+            0.75 * rows[0]["unscaled_benchmark_return"],
+            places=5,
+        )
         window = app.summarize_daily_recommendation_window(rows, 15, "3 months")
         self.assertGreaterEqual(
             window["summary"]["gross_recommended_total_return"],
