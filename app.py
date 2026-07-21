@@ -284,6 +284,9 @@ CLIMATE_SCENARIO_PATHS = {
         "chronic_gdp_loss_2050": 0.000,
         "macro_transition_loss_2050": 0.000,
         "transition_demand_shock_2050": 0.000,
+        "carbon_cost_shock_2050": 0.000,
+        "energy_cost_shock_2050": 0.000,
+        "transition_capex_shock_2050": 0.000,
         "carbon_price_label": "None",
         "note": "Counterfactual reference path with no modeled climate damage or transition shock.",
     },
@@ -295,6 +298,9 @@ CLIMATE_SCENARIO_PATHS = {
         "chronic_gdp_loss_2050": 0.012,
         "macro_transition_loss_2050": 0.022,
         "transition_demand_shock_2050": 0.180,
+        "carbon_cost_shock_2050": 0.100,
+        "energy_cost_shock_2050": 0.040,
+        "transition_capex_shock_2050": 0.060,
         "carbon_price_label": "High / early",
         "note": "Lower physical losses, with material near-term transition risks and opportunities.",
     },
@@ -306,6 +312,9 @@ CLIMATE_SCENARIO_PATHS = {
         "chronic_gdp_loss_2050": 0.018,
         "macro_transition_loss_2050": 0.012,
         "transition_demand_shock_2050": 0.105,
+        "carbon_cost_shock_2050": 0.060,
+        "energy_cost_shock_2050": 0.025,
+        "transition_capex_shock_2050": 0.035,
         "carbon_price_label": "Moderate / early",
         "note": "Moderate transition pressure and lower long-run physical damage.",
     },
@@ -317,6 +326,9 @@ CLIMATE_SCENARIO_PATHS = {
         "chronic_gdp_loss_2050": 0.022,
         "macro_transition_loss_2050": 0.032,
         "transition_demand_shock_2050": 0.205,
+        "carbon_cost_shock_2050": 0.120,
+        "energy_cost_shock_2050": 0.060,
+        "transition_capex_shock_2050": 0.075,
         "carbon_price_label": "High / late",
         "note": "A late policy shock creates sharper repricing and execution risk.",
     },
@@ -328,6 +340,9 @@ CLIMATE_SCENARIO_PATHS = {
         "chronic_gdp_loss_2050": 0.045,
         "macro_transition_loss_2050": 0.004,
         "transition_demand_shock_2050": 0.025,
+        "carbon_cost_shock_2050": 0.010,
+        "energy_cost_shock_2050": 0.020,
+        "transition_capex_shock_2050": 0.015,
         "carbon_price_label": "Low",
         "note": "Limited transition shock, but materially higher acute and chronic physical losses.",
     },
@@ -339,9 +354,33 @@ CLIMATE_SCENARIO_PATHS = {
         "chronic_gdp_loss_2050": 0.036,
         "macro_transition_loss_2050": 0.028,
         "transition_demand_shock_2050": 0.160,
+        "carbon_cost_shock_2050": 0.080,
+        "energy_cost_shock_2050": 0.080,
+        "transition_capex_shock_2050": 0.060,
         "carbon_price_label": "Uneven",
         "note": "Elevated physical losses combine with an inefficient, regionally fragmented transition.",
     },
+}
+
+
+# Cash-flow transmission parameters for the transition model. These are
+# transparent sector calibrations, not observed issuer data. Production values
+# should be replaced by NGFS/BNEF demand paths, EIA energy prices, EPA eGRID
+# emissions, and SEC issuer financials. Demand elasticity is signed: negative
+# values represent sectors that may benefit from transition demand.
+SECTOR_TRANSITION_CHANNELS = {
+    "Energy": {"carbon_intensity": 0.94, "demand_elasticity": 0.95, "energy_intensity": 0.85, "capex_intensity": 0.65, "pass_through": 0.45},
+    "Utilities": {"carbon_intensity": 0.78, "demand_elasticity": 0.25, "energy_intensity": 0.85, "capex_intensity": 0.85, "pass_through": 0.65},
+    "Industrials": {"carbon_intensity": 0.62, "demand_elasticity": 0.55, "energy_intensity": 0.70, "capex_intensity": 0.62, "pass_through": 0.45},
+    "Technology": {"carbon_intensity": 0.30, "demand_elasticity": -0.45, "energy_intensity": 0.35, "capex_intensity": 0.20, "pass_through": 0.75},
+    "Financial Services": {"carbon_intensity": 0.42, "demand_elasticity": 0.25, "energy_intensity": 0.18, "capex_intensity": 0.25, "pass_through": 0.70},
+    "Financials": {"carbon_intensity": 0.42, "demand_elasticity": 0.25, "energy_intensity": 0.18, "capex_intensity": 0.25, "pass_through": 0.70},
+    "Consumer Cyclical": {"carbon_intensity": 0.44, "demand_elasticity": 0.40, "energy_intensity": 0.55, "capex_intensity": 0.35, "pass_through": 0.55},
+    "Consumer Defensive": {"carbon_intensity": 0.38, "demand_elasticity": 0.25, "energy_intensity": 0.60, "capex_intensity": 0.35, "pass_through": 0.65},
+    "Healthcare": {"carbon_intensity": 0.28, "demand_elasticity": 0.20, "energy_intensity": 0.45, "capex_intensity": 0.30, "pass_through": 0.65},
+    "Basic Materials": {"carbon_intensity": 0.82, "demand_elasticity": 0.75, "energy_intensity": 0.90, "capex_intensity": 0.72, "pass_through": 0.40},
+    "Real Estate": {"carbon_intensity": 0.52, "demand_elasticity": 0.45, "energy_intensity": 0.70, "capex_intensity": 0.62, "pass_through": 0.45},
+    "Communication Services": {"carbon_intensity": 0.30, "demand_elasticity": -0.15, "energy_intensity": 0.50, "capex_intensity": 0.25, "pass_through": 0.70},
 }
 
 SCENARIO_MATRIX_KEYS = (
@@ -435,10 +474,10 @@ CLIMATE_DATA_SOURCE_CATALOG = [
     },
     {
         "name": "NOAA GML CO2",
-        "risk_type": "Transition pressure",
+        "risk_type": "Climate-state context",
         "status": "Official / cached",
         "url": NOAA_CO2_CSV_URL,
-        "client_use": "Atmospheric CO2 trend used as a transition-pressure and policy-lag indicator.",
+        "client_use": "Atmospheric climate-state context only; it is not used as a policy, carbon-cost, or transition-risk score.",
     },
     {
         "name": "NOAA NCEI Billion-Dollar Disasters",
@@ -480,35 +519,35 @@ CLIMATE_DATA_SOURCE_CATALOG = [
         "risk_type": "Transition emissions",
         "status": "Source-ready",
         "url": EPA_GHGRP_URL,
-        "client_use": "Facility-level emissions for issuer transition-risk mapping.",
+        "client_use": "Facility emissions input for the carbon-cost channel; source-ready and not silently replaced by CO2 concentration.",
     },
     {
         "name": "EPA eGRID",
         "risk_type": "Power-sector transition",
         "status": "Source-ready",
         "url": EPA_EGRID_URL,
-        "client_use": "Electricity generation mix and emission rates for utilities and data-center power exposure.",
+        "client_use": "Generation mix and emission rates for the carbon-cost and energy-cost channels.",
     },
     {
         "name": "EIA Open Data",
         "risk_type": "Energy transition",
         "status": "API-ready",
         "url": EIA_OPEN_DATA_URL,
-        "client_use": "Energy prices, generation mix, demand, fuel use, and emissions series.",
+        "client_use": "Energy prices, generation mix, demand, and fuel use for the energy-cost and demand-shift channels.",
     },
     {
         "name": "NGFS Scenarios",
         "risk_type": "Scenario transition",
         "status": "Scenario-ready",
         "url": NGFS_SCENARIOS_URL,
-        "client_use": "Orderly, disorderly, and hot-house pathways for carbon-price and macro transition shocks.",
+        "client_use": "Conditional carbon-price, energy, macro, and sector-demand pathways; no occurrence probability is assigned.",
     },
     {
         "name": "SEC EDGAR APIs",
         "risk_type": "Disclosure / regulation",
         "status": "API-ready",
         "url": SEC_EDGAR_API_URL,
-        "client_use": "Issuer filings, climate-risk language, capex, insurance, and regulatory disclosure signals.",
+        "client_use": "Revenue, operating cost, CapEx, business segments, and disclosures for issuer-level transition cash-flow mapping.",
     },
 ]
 
@@ -1497,18 +1536,16 @@ def climate_state_variables(daily_signal=None, context=None):
     allocation_pressure = clamp(safe_float(daily_signal.get("allocation_pressure"), event_pressure), 0.0, 1.0)
     acute_hazard = event_pressure
     chronic_state = clamp(
-        0.55 * clamp((safe_float(context.get("current_warming"), CURRENT_WARMING_C) - 0.75) / 0.85, 0, 1)
-        + 0.30 * clamp((safe_float(context.get("disaster_10y_avg"), 15) - 8) / 20, 0, 1)
-        + 0.15 * clamp((safe_float(context.get("co2_10y_change"), 20) - 12) / 25, 0, 1),
+        0.65 * clamp((safe_float(context.get("current_warming"), CURRENT_WARMING_C) - 0.75) / 0.85, 0, 1)
+        + 0.35 * clamp((safe_float(context.get("disaster_10y_avg"), 15) - 8) / 20, 0, 1),
         0.0,
         1.0,
     )
-    macro_transition = clamp(
-        0.35 * clamp((safe_float(context.get("co2_ppm"), 420) - 390) / 55, 0, 1)
-        + 0.65 * clamp((safe_float(context.get("co2_10y_change"), 20) - 12) / 25, 0, 1),
-        0.0,
-        1.0,
-    )
+    # No live macro-transition score is fabricated from atmospheric CO2. The
+    # strategic scenario engine supplies transition pathways; current-state
+    # issuer scores use disclosed sector-channel calibrations until NGFS/EIA/
+    # EPA/SEC inputs are loaded.
+    macro_transition = 0.0
     official_mode = str(context.get("source_mode", "")).lower()
     alert_mode = str(daily_signal.get("source_mode", "")).lower()
     source_reliability = 0.95 if "official" in official_mode else 0.55
@@ -1518,6 +1555,7 @@ def climate_state_variables(daily_signal=None, context=None):
         "acute_hazard_state": round(acute_hazard, 4),
         "chronic_climate_state": round(chronic_state, 4),
         "macro_transition_state": round(macro_transition, 4),
+        "macro_transition_status": "Scenario-only; live NGFS/EIA/EPA/SEC transition inputs not loaded",
         "daily_pressure": round(event_pressure, 4),
         "allocation_pressure": round(allocation_pressure, 4),
         "data_confidence": round(data_confidence, 4),
@@ -1525,10 +1563,104 @@ def climate_state_variables(daily_signal=None, context=None):
         "source_mode": daily_signal.get("source_mode", context.get("source_mode", "cached data")),
         "calculation": {
             "acute": "NWS severity-weighted event pressure only",
-            "chronic": "0.55 warming + 0.30 disaster frequency + 0.15 CO2 trend",
-            "transition_proxy": "0.35 CO2 level + 0.65 ten-year CO2 trend; no NWS input",
+            "chronic": "0.65 observed warming + 0.35 trailing disaster frequency; CO2 is contextual only",
+            "transition": "Carbon cost + demand shift + energy cost + transition CapEx - pass-through; no CO2 concentration input",
             "confidence": "0.55 official-climate reliability + 0.45 NWS reliability",
         },
+    }
+
+
+TRANSITION_DCF_COMPONENTS = (
+    "macro_transition",
+    "carbon_cost",
+    "demand_shift",
+    "energy_cost",
+    "transition_capex",
+    "pass_through_offset",
+)
+
+DCF_COMPONENTS = ("acute_physical", "chronic_physical") + TRANSITION_DCF_COMPONENTS
+
+
+def transition_cash_flow_channels(scenario, sector, horizon_fraction=1.0):
+    """Translate a scenario into signed terminal FCFF transition channels.
+
+    Positive values reduce FCFF. The pass-through offset is negative because it
+    mitigates carbon and energy costs. Inputs are explicit scenario/sector
+    calibrations until official issuer-level sources are loaded.
+    """
+    if sector == "Economy":
+        channel = {
+            "carbon_intensity": 0.50,
+            "demand_elasticity": 0.50,
+            "energy_intensity": 0.50,
+            "capex_intensity": 0.50,
+            "pass_through": 0.50,
+        }
+    else:
+        sector = normalize_model_sector(sector)
+        channel = SECTOR_TRANSITION_CHANNELS[sector]
+
+    carbon_cost = (
+        safe_float(scenario.get("carbon_cost_shock_2050"), 0.0)
+        * safe_float(channel.get("carbon_intensity"), 0.50)
+        * 0.35
+        * horizon_fraction
+    )
+    demand_shift = (
+        safe_float(scenario.get("transition_demand_shock_2050"), 0.0)
+        * safe_float(channel.get("demand_elasticity"), 0.0)
+        * horizon_fraction
+    )
+    energy_cost = (
+        safe_float(scenario.get("energy_cost_shock_2050"), 0.0)
+        * safe_float(channel.get("energy_intensity"), 0.50)
+        * 0.30
+        * horizon_fraction
+    )
+    transition_capex = (
+        safe_float(scenario.get("transition_capex_shock_2050"), 0.0)
+        * safe_float(channel.get("capex_intensity"), 0.50)
+        * 0.45
+        * horizon_fraction
+    )
+    pass_through_offset = -(
+        carbon_cost + energy_cost
+    ) * safe_float(channel.get("pass_through"), 0.50)
+    return {
+        "carbon_cost": carbon_cost,
+        "demand_shift": demand_shift,
+        "energy_cost": energy_cost,
+        "transition_capex": transition_capex,
+        "pass_through_offset": pass_through_offset,
+        "gross_cost_before_pass_through": carbon_cost + energy_cost,
+        "sector_inputs": dict(channel),
+        "data_status": "Transparent sector calibration; NGFS/EIA/EPA/SEC issuer inputs source-ready",
+    }
+
+
+def structural_transition_pressure(sector):
+    """Sector fallback when issuer-level transition cash-flow data is absent."""
+    sector = normalize_model_sector(sector)
+    channel = SECTOR_TRANSITION_CHANNELS[sector]
+    carbon_cost = 0.30 * safe_float(channel.get("carbon_intensity"), 0.50)
+    demand_shift = 0.25 * safe_float(channel.get("demand_elasticity"), 0.0)
+    energy_cost = 0.20 * safe_float(channel.get("energy_intensity"), 0.50)
+    transition_capex = 0.25 * safe_float(channel.get("capex_intensity"), 0.50)
+    pass_through_offset = -0.30 * (carbon_cost + energy_cost) * safe_float(channel.get("pass_through"), 0.50)
+    net_pressure = clamp(
+        carbon_cost + demand_shift + energy_cost + transition_capex + pass_through_offset,
+        0.02,
+        0.98,
+    )
+    return {
+        "risk": round(net_pressure, 4),
+        "carbon_cost": round(carbon_cost, 4),
+        "demand_shift": round(demand_shift, 4),
+        "energy_cost": round(energy_cost, 4),
+        "transition_capex": round(transition_capex, 4),
+        "pass_through_offset": round(pass_through_offset, 4),
+        "status": "Sector cash-flow calibration; issuer NGFS/EIA/EPA/SEC data not loaded",
     }
 
 
@@ -1678,8 +1810,6 @@ def scenario_terminal_components(scenario, sector, vulnerability, horizon):
     if sector == "Economy":
         acute_sector_multiplier = chronic_sector_multiplier = 1.0
         acute_firm_ratio = chronic_firm_ratio = macro_beta = 1.0
-        transition_risk = 0.50
-        transition_opportunity = 0.45
     else:
         factors = SECTOR_DOWNSCALING_FACTORS[sector]
         acute_sector_multiplier = sector_vulnerability_multiplier(sector, "acute")
@@ -1695,10 +1825,8 @@ def scenario_terminal_components(scenario, sector, vulnerability, horizon):
             FIRM_VULNERABILITY_MAX,
         )
         macro_beta = safe_float(vulnerability.get("macro_beta"), factors["macro_beta"])
-        transition = sector_transition_profile(sector)
-        transition_risk = transition["risk"]
-        transition_opportunity = transition["opportunity"]
-    return {
+    transition_channels = transition_cash_flow_channels(scenario, sector, horizon_fraction)
+    components = {
         "acute_physical": safe_float(scenario.get("acute_gdp_loss_2050"), 0.0)
         * acute_sector_multiplier
         * acute_firm_ratio
@@ -1708,15 +1836,23 @@ def scenario_terminal_components(scenario, sector, vulnerability, horizon):
         * chronic_firm_ratio
         * horizon_fraction,
         "macro_transition": safe_float(scenario.get("macro_transition_loss_2050"), 0.0) * macro_beta * horizon_fraction,
-        "micro_transition": safe_float(scenario.get("transition_demand_shock_2050"), 0.0)
-        * (transition_risk - transition_opportunity)
-        * horizon_fraction,
         "acute_sector_multiplier": acute_sector_multiplier,
         "chronic_sector_multiplier": chronic_sector_multiplier,
         "acute_firm_ratio": acute_firm_ratio,
         "chronic_firm_ratio": chronic_firm_ratio,
         "horizon_fraction": horizon_fraction,
     }
+    for key in TRANSITION_DCF_COMPONENTS:
+        if key != "macro_transition":
+            components[key] = safe_float(transition_channels.get(key), 0.0)
+    components["micro_transition"] = sum(
+        safe_float(components.get(key), 0.0)
+        for key in TRANSITION_DCF_COMPONENTS
+        if key != "macro_transition"
+    )
+    components["transition_channel_inputs"] = transition_channels.get("sector_inputs", {})
+    components["transition_data_status"] = transition_channels.get("data_status")
+    return components
 
 
 def discounted_scenario_value(components, horizon, wacc=0.075, growth=0.025, return_details=False):
@@ -1724,12 +1860,11 @@ def discounted_scenario_value(components, horizon, wacc=0.075, growth=0.025, ret
     years = max(1, horizon - CURRENT_YEAR)
     wacc = clamp(safe_float(wacc, 0.075), 0.03, 0.20)
     growth = clamp(safe_float(growth, 0.025), -0.02, wacc - 0.015)
-    component_keys = ("acute_physical", "chronic_physical", "macro_transition", "micro_transition")
     pv = 0.0
     terminal_cash_flow = 1.0
     for step in range(1, years + 1):
         progress = step / years
-        loss = sum(safe_float(components.get(key), 0.0) * progress for key in component_keys)
+        loss = sum(safe_float(components.get(key), 0.0) * progress for key in DCF_COMPONENTS)
         baseline_cash_flow = (1 + growth) ** step
         terminal_cash_flow = baseline_cash_flow * (1 - clamp(loss, -0.50, 0.80))
         pv += terminal_cash_flow / ((1 + wacc) ** step)
@@ -1753,14 +1888,20 @@ def discounted_scenario_value(components, horizon, wacc=0.075, growth=0.025, ret
 
 
 def shapley_value_attribution(reference_components, target_components, horizon):
-    keys = ("acute_physical", "chronic_physical", "macro_transition", "micro_transition")
+    keys = DCF_COMPONENTS
     reference_value = discounted_scenario_value(reference_components, horizon)
+    coalition_cache = {}
 
     def coalition_value(active_keys):
+        cache_key = frozenset(active_keys)
+        if cache_key in coalition_cache:
+            return coalition_cache[cache_key]
         mixed = dict(reference_components)
         for key in active_keys:
             mixed[key] = target_components[key]
-        return discounted_scenario_value(mixed, horizon) / max(reference_value, 1e-12) - 1
+        value = discounted_scenario_value(mixed, horizon) / max(reference_value, 1e-12) - 1
+        coalition_cache[cache_key] = value
+        return value
 
     contributions = {}
     n = len(keys)
@@ -1781,7 +1922,11 @@ def scenario_repricing_for_scope(scope_rows, target, reference, horizon):
         "acute_physical": "Acute physical",
         "chronic_physical": "Chronic physical",
         "macro_transition": "Macro transition",
-        "micro_transition": "Business-model transition",
+        "carbon_cost": "Carbon cost",
+        "demand_shift": "Demand shift",
+        "energy_cost": "Energy cost",
+        "transition_capex": "Transition CapEx",
+        "pass_through_offset": "Cost pass-through",
     }
     aggregate_impact = 0.0
     aggregate_target = {key: 0.0 for key in component_labels}
@@ -1820,6 +1965,17 @@ def scenario_repricing_for_scope(scope_rows, target, reference, horizon):
                 "acute_sector_multiplier": round(target_components.get("acute_sector_multiplier", 1.0), 4),
                 "chronic_sector_multiplier": round(target_components.get("chronic_sector_multiplier", 1.0), 4),
                 "data_quality": row["vulnerability"].get("quality"),
+                "transition_driver": max(
+                    (
+                        (key, safe_float(target_components.get(key), 0.0))
+                        for key in TRANSITION_DCF_COMPONENTS
+                        if key != "macro_transition"
+                    ),
+                    key=lambda item: abs(item[1]),
+                    default=("-", 0.0),
+                )[0],
+                "transition_channel_inputs": target_components.get("transition_channel_inputs", {}),
+                "transition_data_status": target_components.get("transition_data_status"),
             }
         )
     attribution = []
@@ -1846,14 +2002,11 @@ def scenario_repricing_for_scope(scope_rows, target, reference, horizon):
             4,
         ),
         "transition_loss_delta": round(
-            aggregate_target["macro_transition"]
-            + aggregate_target["micro_transition"]
-            - aggregate_reference["macro_transition"]
-            - aggregate_reference["micro_transition"],
+            sum(aggregate_target[key] - aggregate_reference[key] for key in TRANSITION_DCF_COMPONENTS),
             4,
         ),
         "attribution": attribution,
-        "attribution_method": "Exact Shapley decomposition across four nonlinear DCF channels",
+        "attribution_method": "Exact Shapley decomposition across physical and transition FCFF channels",
         "attribution_residual": round(attribution_residual, 8),
         "weighted_target_present_value": round(weighted_target_value, 6),
         "weighted_reference_present_value": round(weighted_reference_value, 6),
@@ -1939,7 +2092,6 @@ def event_nowcast_for_scope(scope_rows, daily_signal, state):
         0.55 * weighted_resilience
         + 0.15 * weighted_opportunity
         - 0.75 * event_risk
-        - 0.10 * state["macro_transition_state"]
     )
     overlay_bps = int(round(TACTICAL_OVERLAY_LIMIT_BPS * clamp(tactical_edge, -1.0, 1.0)))
     if overlay_bps <= -80:
@@ -2014,6 +2166,13 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
             "check": "Pass",
         },
         {
+            "step": "Transition cash flow",
+            "formula": "TR = carbon cost + demand shift + energy cost + transition CapEx - pass-through",
+            "input": "Scenario pathway x sector channel exposure; atmospheric CO2 excluded",
+            "output": f"transition delta {long_term['transition_loss_delta']:+.4%}",
+            "check": "Pass",
+        },
+        {
             "step": "Valuation",
             "formula": "PV = annual climate-adjusted cash flows + terminal value, discounted at 7.5%",
             "input": f"Horizon {horizon}; linear endpoint interpolation",
@@ -2022,8 +2181,8 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
         },
         {
             "step": "Attribution",
-            "formula": "Four-factor Shapley value across the nonlinear DCF",
-            "input": "Acute, chronic, macro transition, business-model transition",
+            "formula": "Exact Shapley value across physical and transition FCFF channels",
+            "input": "Acute, chronic, macro, carbon, demand, energy, CapEx, and pass-through",
             "output": f"residual {long_term['attribution_residual']:.8f}",
             "check": "Pass" if abs(long_term["attribution_residual"]) < 1e-8 else "Review",
         },
@@ -2052,12 +2211,12 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
         "scope_resolution": resolution,
         "calculation_ledger": calculation_ledger,
         "methodology": {
-            "long_term": "Target scenario minus reference scenario, downscaled country -> sector -> issuer, then discounted into an as-of-date value impact.",
+            "long_term": "Target scenario minus reference scenario, downscaled country -> sector -> issuer. Transition FCFF is carbon cost + demand shift + energy cost + transition CapEx - pass-through; CO2 concentration is not a transition input.",
             "short_term": "NWS event pressure x hazard share x sector exposure beta, translated into selection risk and a capped tactical weight overlay.",
             "probability_rule": "Scenario outputs are conditional stresses. The model does not assign occurrence probabilities to NGFS-style scenarios.",
             "tail_rule": "Scenario tail is reported separately from physical and transition pressure to avoid double counting in the client risk score.",
         },
-        "calibration_notice": "The workflow follows the uploaded Bloomberg target-reference, downscaling, cash-flow, and as-of-date valuation logic. Scenario endpoints, sector value-added weights, and issuer ratios are transparent replaceable proxies, not Bloomberg data or investment advice.",
+        "calibration_notice": "The workflow follows the uploaded Bloomberg target-reference, downscaling, cash-flow, and as-of-date valuation logic. Transition channels currently use transparent sector calibrations; NGFS, EIA, EPA eGRID/GHGRP, and SEC issuer inputs are source-ready but are not fabricated when unavailable.",
     }
 
 
@@ -2075,16 +2234,9 @@ def issuer_exposure_model(symbol, asset_type, sector, climate_risk, transition, 
     confidence = clamp(state["data_confidence"] * (0.94 if asset_type == "ETF" else 0.86) + 0.06 * liquidity, 0.20, 0.98)
     acute = state["acute_hazard_state"]
     chronic = state["chronic_climate_state"]
-    macro = state["macro_transition_state"]
+    transition_channels = structural_transition_pressure(sector)
     physical_pressure = clamp(0.52 * acute * sensitivity + 0.33 * chronic * sensitivity + 0.15 * climate_risk, 0.02, 0.98)
-    transition_pressure = clamp(
-        0.48 * safe_float(transition.get("risk"), 0.50)
-        + 0.32 * macro
-        + 0.20 * climate_risk
-        - 0.18 * opportunity,
-        0.02,
-        0.98,
-    )
+    transition_pressure = safe_float(transition_channels.get("risk"), 0.50)
     climate_pressure = clamp(0.54 * physical_pressure + 0.46 * transition_pressure, 0.02, 0.98)
     return {
         "physical_pressure": round(physical_pressure, 4),
@@ -2094,6 +2246,8 @@ def issuer_exposure_model(symbol, asset_type, sector, climate_risk, transition, 
         "opportunity": round(opportunity, 4),
         "data_confidence": round(confidence, 4),
         "sensitivity": round(sensitivity, 4),
+        "transition_channels": transition_channels,
+        "transition_data_status": transition_channels.get("status"),
     }
 
 
@@ -2127,9 +2281,12 @@ def climate_source_rows(daily_signal=None, context=None):
         if item["name"] == "NWS Active Alerts":
             status = daily_signal.get("source_mode", status)
             mode = "Live model input"
-        elif item["name"] in {"NASA GISTEMP", "NOAA GML CO2", "NOAA NCEI Billion-Dollar Disasters"}:
+        elif item["name"] in {"NASA GISTEMP", "NOAA NCEI Billion-Dollar Disasters"}:
             status = context.get("source_mode", status)
             mode = "Official model input"
+        elif item["name"] == "NOAA GML CO2":
+            status = context.get("source_mode", status)
+            mode = "Context only - excluded from transition score"
         elif item["name"] in {"EPA GHGRP", "EPA eGRID", "EIA Open Data", "NGFS Scenarios", "SEC EDGAR APIs"}:
             mode = "Transition-risk source"
         else:
@@ -2153,7 +2310,6 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
     acute_physical = state["acute_hazard_state"]
     chronic_physical = state["chronic_climate_state"]
     physical_score = clamp(0.58 * acute_physical + 0.42 * chronic_physical, 0.0, 1.0)
-    macro_transition = state["macro_transition_state"]
     scenario_tail_loss = safe_float(
         cvor_summary.get("scenario_tail_loss_rate"),
         0.0,
@@ -2172,7 +2328,7 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
             0.0,
             1.0,
         )
-    transition_weighted = macro_transition
+    transition_weighted = 0.0
     top_affected = []
     if latest_alloc:
         total_weight = sum(safe_float(r.get("climate_weight"), 0.0) for r in latest_alloc) or 1.0
@@ -2180,7 +2336,7 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
         for row in latest_alloc:
             weight = safe_float(row.get("climate_weight"), 0.0) / total_weight
             sector = row.get("sector") or SECTOR_ETFS.get(row.get("ticker"), {}).get("name") or "Technology"
-            transition = sector_transition_profile(sector)
+            transition = structural_transition_pressure(sector)
             sensitivity = COMPANY_SECTOR_SENSITIVITY.get(sector, safe_float(SECTOR_ETFS.get(row.get("ticker"), {}).get("physical"), 0.50))
             physical = clamp(0.48 * safe_float(row.get("daily_sector_stress"), physical_score) + 0.34 * sensitivity * physical_score + 0.18 * chronic_physical, 0.0, 1.0)
             combined = clamp(0.52 * physical + 0.48 * transition["risk"], 0.0, 1.0)
@@ -2195,10 +2351,10 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
                         "transition_risk": transition["risk"],
                         "combined_risk": round(combined, 4),
                         "action": "Hedge / reduce" if combined >= 0.68 else ("Watch closely" if combined >= 0.46 else "Monitor"),
-                        "driver": row.get("daily_driver") or transition["headline"],
+                        "driver": row.get("daily_driver") or transition.get("status"),
                     }
                 )
-    transition_score = clamp(0.58 * transition_weighted + 0.42 * macro_transition, 0.0, 1.0)
+    transition_score = clamp(transition_weighted, 0.0, 1.0)
     pressure_score = clamp(0.55 * physical_score + 0.45 * transition_score, 0.0, 1.0)
     decision_score = max(pressure_score, scenario_tail_score)
     source_rows = climate_source_rows(daily_signal=daily_signal, context=context)
@@ -2214,7 +2370,8 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
         "acute_physical_score": round(acute_physical, 4),
         "chronic_physical_score": round(chronic_physical, 4),
         "transition_score": round(transition_score, 4),
-        "macro_transition_score": round(macro_transition, 4),
+        "macro_transition_score": 0.0,
+        "transition_data_status": "Sector cash-flow calibration; live NGFS/EIA/EPA/SEC transition inputs not loaded",
         "scenario_tail_score": round(scenario_tail_score, 4),
         "scenario_tail_loss_rate": round(scenario_tail_loss, 4),
         "scenario_tail_thresholds": {
@@ -2233,7 +2390,7 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
         ],
         "calculation_rules": {
             "physical_pressure": "0.58 acute NWS state + 0.42 chronic official-data state",
-            "transition_pressure": "0.58 portfolio sector transition exposure + 0.42 structural macro proxy",
+            "transition_pressure": "Portfolio-weighted (carbon cost + demand shift + energy cost + transition CapEx - pass-through); CO2 concentration excluded",
             "client_pressure": "0.55 physical pressure + 0.45 transition pressure",
             "decision_rule": "Maximum of client pressure and the explicitly thresholded scenario-tail guardrail; no additive double count",
         },
@@ -2246,7 +2403,7 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
             },
             {
                 "layer": "Chronic physical state",
-                "coverage": "NASA temperature, NOAA CO2, NCEI disaster history",
+                "coverage": "NASA temperature and NCEI disaster history; NOAA CO2 shown as context only",
                 "status": "Operational",
                 "decision_use": "Regime and long-run physical-pressure calibration",
             },
@@ -2507,7 +2664,13 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
         )
         risk_penalty = clamp(0.52 * (1 - risk_score) + 0.28 * stats["volatility"] / max(vol_limit, 1e-6) + 0.20 * (1 - exposure["data_confidence"]), 0.0, 0.95)
         scenario_tail_penalty = clamp(scenario_tail_proxy, 0.0, 1.0)
-        theta_regime = clamp(0.34 + 0.36 * climate_state["acute_hazard_state"] + 0.30 * climate_state["macro_transition_state"], 0.20, 0.88)
+        theta_regime = clamp(
+            0.28 + 0.50 * climate_state["acute_hazard_state"]
+            if short_term
+            else 0.35 + 0.35 * climate_state["chronic_climate_state"],
+            0.20,
+            0.78,
+        )
         robust_score = clamp(
             profile["market_weight"] * base_alpha
             + profile["climate_weight"] * (0.50 + theta_regime * climate_alpha)
@@ -2516,9 +2679,16 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
             0.01,
             0.99,
         )
+        transition_channels = exposure.get("transition_channels", {})
+        dominant_transition_channel = max(
+            (key for key in ("carbon_cost", "demand_shift", "energy_cost", "transition_capex", "pass_through_offset")),
+            key=lambda key: abs(safe_float(transition_channels.get(key), 0.0)),
+            default="-",
+        )
         attribution = (
             f"Base alpha {base_alpha:.0%}; climate alpha {climate_alpha:+.0%}; "
             f"risk penalty {risk_penalty:.0%}; conditional tail loss {scenario_tail_proxy:.2%}; "
+            f"transition driver {dominant_transition_channel.replace('_', ' ')}; "
             f"confidence {exposure['data_confidence']:.0%}."
         )
         total_score = robust_score
@@ -2540,6 +2710,9 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
                 "climate_score": round(climate_score, 4),
                 "physical_risk": round(physical_risk, 4),
                 "transition_risk": round(transition_risk, 4),
+                "transition_channels": transition_channels,
+                "transition_driver": dominant_transition_channel,
+                "transition_data_status": exposure.get("transition_data_status"),
                 "transition_headline": transition.get("headline"),
                 "base_alpha": round(base_alpha, 4),
                 "climate_alpha": round(climate_alpha, 4),
@@ -3444,7 +3617,7 @@ def build_payload():
         "scenario_methodology": {
             "scope": "Country -> sector -> issuer -> portfolio",
             "physical_downscaling": "Country acute/chronic losses are scaled by sector vulnerability, then by issuer fixed-asset and labor-intensity ratios.",
-            "transition_downscaling": "Macro earnings sensitivity is separated from business-model transition risk and opportunity.",
+            "transition_downscaling": "Transition FCFF separates carbon cost, demand shift, energy cost, transition CapEx, and pass-through. Atmospheric CO2 is excluded from transition scoring.",
             "valuation": "Scenario-conditioned cash flows are discounted into an as-of-date value impact relative to a chosen reference scenario.",
             "probability": "No occurrence probabilities are assigned to NGFS-style scenarios.",
             "short_term": "NWS alerts affect event selection risk and tactical portfolio basis points, not long-run scenario probability.",
@@ -3907,14 +4080,14 @@ HTML = r"""<!doctype html>
 
         <div class="model-rule">
           <strong>Quant rule</strong>
-          <span>Long-term scenarios are conditional repricing exercises, not forecasts and not occurrence probabilities. NWS alerts feed the short-term event engine only.</span>
+          <span>Long-term scenarios are conditional repricing exercises, not forecasts or occurrence probabilities. Transition FCFF = carbon cost + demand shift + energy cost + transition CapEx - pass-through; atmospheric CO2 is excluded.</span>
         </div>
 
         <div class="method-flow" aria-label="Climate model pipeline">
           <div class="method-step"><div class="number">01 Input</div><div class="name">Target vs reference</div><div class="detail">NGFS-style acute, chronic, macro and demand paths</div></div>
           <div class="method-step"><div class="number">02 Country</div><div class="name">Economic shock</div><div class="detail">Country GDP and transition pathway delta</div></div>
           <div class="method-step"><div class="number">03 Sector</div><div class="name">Vulnerability</div><div class="detail">Fixed assets, labor intensity and earnings beta</div></div>
-          <div class="method-step"><div class="number">04 Issuer</div><div class="name">Cash-flow impact</div><div class="detail">Winsorized issuer-to-sector exposure ratio</div></div>
+          <div class="method-step"><div class="number">04 Issuer</div><div class="name">Cash-flow impact</div><div class="detail">Carbon, demand, energy, CapEx and pass-through channels</div></div>
           <div class="method-step"><div class="number">05 Valuation</div><div class="name">As-of-date repricing</div><div class="detail">Discounted climate-adjusted cash-flow path</div></div>
           <div class="method-step"><div class="number">06 Decision</div><div class="name">Strategic + tactical</div><div class="detail">Long-term value tilt plus NWS event overlay</div></div>
         </div>
@@ -4206,10 +4379,11 @@ function renderClimateModelLab(d){
     </tr>`).join("");
 
   const instrumentTable = document.getElementById("modelInstrumentTable");
-  instrumentTable.innerHTML = `<tr><th>Name</th><th>Sector</th><th>Weight</th><th>Value impact</th><th>Sector A / C</th><th>Issuer A / C</th><th>Data</th></tr>` +
+  instrumentTable.innerHTML = `<tr><th>Name</th><th>Sector</th><th>Weight</th><th>Value impact</th><th>Transition driver</th><th>Sector A / C</th><th>Issuer A / C</th><th>Data</th></tr>` +
     (lt.instruments || []).slice(0,8).map(r=>`<tr>
       <td><b>${r.name}</b></td><td>${r.sector}</td><td>${fmtPct(r.weight)}</td>
       <td class="${clsFor(r.value_impact)}"><b>${fmtSignedPct(r.value_impact)}</b></td>
+      <td>${String(r.transition_driver || "-").replaceAll("_", " ")}</td>
       <td>${Number(r.acute_sector_multiplier||0).toFixed(2)}x / ${Number(r.chronic_sector_multiplier||0).toFixed(2)}x</td>
       <td>${Number(r.acute_ratio||0).toFixed(2)}x / ${Number(r.chronic_ratio||0).toFixed(2)}x</td>
       <td><span class="lab-status">${r.data_quality || "Proxy"}</span></td>
@@ -4481,7 +4655,7 @@ function renderClientClimateIntelligence(ci){
     </div>
     <div class="grid two">
       <div class="signal-card"><div class="label">Physical pressure</div><div class="value ${clsFor(.44-(ci.physical_score || 0))}">${fmtPct(ci.physical_score || 0)}</div>${renderScoreBar(ci.physical_score || 0)}<div class="hint">Severity index, not event probability</div></div>
-      <div class="signal-card"><div class="label">Transition pressure</div><div class="value ${clsFor(.44-(ci.transition_score || 0))}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}<div class="hint">Sector + macro transition state</div></div>
+      <div class="signal-card"><div class="label">Transition pressure</div><div class="value ${clsFor(.44-(ci.transition_score || 0))}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}<div class="hint">Cash-flow channels; CO2 concentration excluded</div></div>
       <div class="signal-card"><div class="label">Conditional scenario tail</div><div class="value amber">${fmtPct(ci.scenario_tail_loss_rate || 0)}</div>${renderScoreBar(ci.scenario_tail_score || 0)}<div class="hint">Mean of two worst scenario losses</div></div>
       <div class="signal-card"><div class="label">Evidence confidence</div><div class="value blue">${fmtPct(ci.confidence || 0)}</div>${renderScoreBar(ci.confidence || 0)}<div class="hint">Observed inputs plus proxy coverage</div></div>
     </div>`;
@@ -4576,7 +4750,7 @@ function renderClimateData(d){
   const inputs = [
     ["NWS active alerts", Number(daily.climate_alerts || 0).toLocaleString(), "Acute event intensity and tactical sector overlay", daily.source_mode || "Live input"],
     ["NASA GISTEMP", `${Number(c.current_warming).toFixed(3)} C`, "Chronic warming state and physical-risk calibration", `Official vintage ${c.latest_year}`],
-    ["NOAA GML CO2", `${Number(c.co2_ppm).toFixed(2)} ppm`, "Macro transition-pressure proxy", `10Y change ${Number(c.co2_10y_change).toFixed(2)} ppm`],
+    ["NOAA GML CO2", `${Number(c.co2_ppm).toFixed(2)} ppm`, "Climate-state context only", `Excluded from transition score | 10Y change ${Number(c.co2_10y_change).toFixed(2)} ppm`],
     ["NCEI disasters", `${Number(c.disaster_10y_avg).toFixed(2)} / year`, "Historical acute-loss frequency calibration", `Official vintage ${c.latest_year}`],
     ["Derived climate context", Number(c.climate_pressure_multiplier).toFixed(3), "Cross-check for climate dashboards; not a scenario probability or valuation multiplier", c.source_mode || "Derived"],
   ];

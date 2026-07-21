@@ -45,6 +45,47 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertGreater(energy["micro_transition"], 0.0)
         self.assertLess(technology["micro_transition"], 0.0)
 
+    def test_transition_channels_reconcile_and_exclude_co2_concentration(self):
+        low_co2 = {
+            "current_warming": 1.20,
+            "disaster_10y_avg": 18.0,
+            "co2_ppm": 395.0,
+            "co2_10y_change": 10.0,
+            "source_mode": "official test data",
+        }
+        high_co2 = {**low_co2, "co2_ppm": 470.0, "co2_10y_change": 45.0}
+        signal = {"daily_pressure": 0.2, "allocation_pressure": 0.2, "source_mode": "NWS active test"}
+        low_state = app.climate_state_variables(signal, low_co2)
+        high_state = app.climate_state_variables(signal, high_co2)
+        self.assertEqual(low_state["macro_transition_state"], 0.0)
+        self.assertEqual(high_state["macro_transition_state"], 0.0)
+        self.assertEqual(low_state["chronic_climate_state"], high_state["chronic_climate_state"])
+        self.assertNotIn("transition_proxy", low_state["calculation"])
+
+        components = app.scenario_terminal_components(
+            app.CLIMATE_SCENARIO_PATHS["net_zero_2050"],
+            "Energy",
+            app.issuer_vulnerability_profile("XOM", "Energy"),
+            2050,
+        )
+        channel_sum = sum(
+            components[key]
+            for key in app.TRANSITION_DCF_COMPONENTS
+            if key != "macro_transition"
+        )
+        self.assertAlmostEqual(channel_sum, components["micro_transition"], places=12)
+        self.assertGreater(components["carbon_cost"], 0.0)
+        self.assertGreater(components["transition_capex"], 0.0)
+        self.assertLess(components["pass_through_offset"], 0.0)
+
+    def test_transition_pressure_has_a_traceable_sector_cash_flow_driver(self):
+        energy = app.structural_transition_pressure("Energy")
+        technology = app.structural_transition_pressure("Technology")
+        self.assertGreater(energy["risk"], technology["risk"])
+        self.assertGreater(energy["demand_shift"], 0.0)
+        self.assertLess(technology["demand_shift"], 0.0)
+        self.assertIn("issuer NGFS/EIA/EPA/SEC data not loaded", energy["status"])
+
     def test_value_attribution_reconciles_to_total(self):
         result = app.scenario_repricing_for_scope(
             [self.energy],

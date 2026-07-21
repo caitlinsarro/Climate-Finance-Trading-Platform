@@ -37,7 +37,8 @@ Historical market features are point-in-time. Annual climate features use expand
 
 The platform now separates strategic climate valuation from tactical event risk:
 
-- `Long-term`: choose a target and reference scenario. Country-level acute, chronic, and macro transition shocks are downscaled to sectors, then to issuers using transparent fixed-asset, labor-intensity, and earnings-sensitivity proxies. Climate-adjusted cash flows are discounted into an as-of-date value impact. Nonlinear DCF attribution uses exact four-factor Shapley values.
+- `Long-term`: choose a target and reference scenario. Country-level acute, chronic, and macro transition shocks are downscaled to sectors, then to issuers using transparent fixed-asset, labor-intensity, and earnings-sensitivity proxies. Climate-adjusted cash flows are discounted into an as-of-date value impact. Nonlinear DCF attribution uses exact Shapley values across the physical and transition cash-flow channels.
+- `Transition cash flow`: atmospheric CO2 concentration is climate-state context, not a policy-risk input. Business-model transition risk is decomposed as `carbon cost + demand shift + energy cost + transition CapEx - pass-through`, with each channel shown separately in the valuation attribution.
 - `Short-term`: NWS event pressure is multiplied by the observed hazard mix and hazard-specific sector beta. The portfolio tilt is centered to be zero-sum around strategic weights and scaled so no holding moves more than 250 basis points in one daily overlay. No hazard mix means no tactical trade.
 - `Scope`: the same chain can be read at country, sector, issuer, or current-portfolio level.
 - `Scenario rule`: NGFS-style scenarios are conditional stresses, not forecasts. The model does not assign occurrence probabilities to them.
@@ -76,6 +77,8 @@ The climate buy/sell backtest is a conditional walk-forward replay over the curr
 - FEMA National Risk Index, NASA FIRMS, AirNow, NOAA CPC/NWPS, EPA GHGRP, EPA eGRID, EIA Open Data, NGFS scenarios, and SEC EDGAR APIs as source-ready expansion points for richer physical and transition risk mapping
 
 The app caches official climate data locally under `data/official_climate_data_cache.json` and falls back to built-in proxy values if an external source is unavailable.
+
+NOAA CO2 observations are displayed as climate context only and are explicitly excluded from the transition-risk score. Transition channels currently use disclosed sector calibrations when issuer-level NGFS, EIA, EPA eGRID/GHGRP, and SEC financial inputs are unavailable; the UI identifies that fallback rather than inventing a live policy signal.
 
 ## Install
 
