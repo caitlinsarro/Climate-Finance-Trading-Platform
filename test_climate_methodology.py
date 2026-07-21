@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import app
 
@@ -63,6 +64,52 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertTrue(rows)
         self.assertTrue(all("probability" not in row for row in rows))
         self.assertIn("No occurrence probabilities", summary["scenario_probability_method"])
+
+    def test_optimizer_risk_budget_reconciles_with_weights(self):
+        daily_signal = {
+            "allocation_pressure": 0.20,
+            "category_intensity": {},
+            "category_counts": {},
+            "source_mode": "test NWS input",
+            "climate_alerts": 1,
+            "top_driver": "heat",
+        }
+        climate_context = {
+            "current_warming": 1.20,
+            "disaster_10y_avg": 18.0,
+            "co2_ppm": 425.0,
+            "co2_10y_change": 24.0,
+            "source_mode": "cached official test data",
+        }
+
+        def fake_market(symbols, period="3mo", interval="1d"):
+            charts = {
+                symbol: [
+                    {"close": 100.0, "volume": 1_000_000},
+                    {"close": 101.0, "volume": 1_100_000},
+                ]
+                for symbol in symbols
+            }
+            return {"source": "test", "period": period, "interval": interval, "charts": charts}
+
+        with patch.object(app, "load_daily_climate_signal", return_value=daily_signal), patch.object(
+            app, "climate_data_context", return_value=climate_context
+        ), patch.object(app, "market_chart_payload", side_effect=fake_market):
+            result = app.portfolio_optimizer_payload(
+                mode="etf_only",
+                capital=50_000_000,
+                horizon="long",
+                style="balanced",
+                etfs="SPY,QQQ,XLK,XLE,XLU,XLI",
+            )
+
+        weights = [row["target_weight"] for row in result["rows"]]
+        expected_hhi = sum(weight * weight for weight in weights)
+        budget = result["risk_budget"]
+        self.assertAlmostEqual(sum(weights), 1.0, places=3)
+        self.assertAlmostEqual(budget["hhi"], expected_hhi, places=3)
+        self.assertAlmostEqual(budget["effective_positions"], 1 / expected_hhi, places=1)
+        self.assertEqual(len(budget["checks"]), 4)
 
 
 if __name__ == "__main__":

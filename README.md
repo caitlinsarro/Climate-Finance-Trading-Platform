@@ -1,42 +1,23 @@
-# Jenneson Climate-Finance Trading & Risk Platform
+# Jennison Climate-Finance Trading & Risk Platform
 
-English U.S.-listed climate-finance research cockpit inspired by the earlier China trading dashboard, but rebuilt for the U.S. market system.
+Institutional U.S.-listed climate-finance research workspace for portfolio decisions, scenario repricing, risk attribution, and validation.
 
 ## What It Does
 
-- U.S.-listed sector ETF allocation dashboard
-- Client climate-intelligence summary with physical pressure, transition pressure, an independent scenario-tail guardrail, data confidence, affected holdings, and suggested action
-- Interactive Scenario & Event Lab with country, sector, issuer, and portfolio scopes
-- Long-term target-vs-reference repricing through cash-flow and present-value impacts
-- Short-term NWS event nowcast that converts hazard intensity, exposure, and vulnerability into tactical basis points
-- Daily climate-alert overlay that moves current ETF allocation from NWS active weather alerts
-- Climate signal from temperature anomaly and weather disaster frequency proxies
-- Dedicated Climate Data Center with live, official, and source-ready physical/transition data inputs
-- Climate buy/sell walk-forward backtest over 3 weeks, 3 months, and 3 years using the optimizer-selected universe
-- Conditional portfolio scenario stress matrix with no claimed scenario occurrence probabilities
-- Company-level issuer scanner for market CVaR and climate value-at-risk components
-- U.S. listed company search from NasdaqTrader listings
-- Method 2 Climate VaR approximation for each queried issuer
-- BAU vs 2C mitigation comparison for issuer-level Method 2 CVOR
-- Data quality labels explaining when market cap, sector, beta, or growth data are inferred
-- Current U.S. stock and ETF quote board
-- Professional TradingView-style K-line chart with high-DPI candles, crosshair OHLC readout, volume, MA20, EMA50, VWAP, Bollinger Bands, RSI/MACD, fit, dark mode, and PNG snapshot export
-- Rolling K-line chart with a Today 1-minute intraday mode plus 5D, 1M, 3M, 6M, 1Y, and 2Y windows
-- Faster market refresh for the intraday K-line view
-- ETF watchlist across core index, sector, rates/credit, climate/clean energy, and commodities
-- Portfolio optimizer with ETF-only, ETF + stock, and stock-only construction modes
-- Optimizer controls for capital size, short-term vs long-term holding period, and style selection
-- Automatic optimizer universe that ranks climate-related ETFs and stocks from the current daily climate signal, with optional advanced custom ticker override
-- Optimizer output with target weight, target dollars, estimated shares, market score, physical risk, transition risk, climate score, and action
-- Official climate data inputs from NASA GISTEMP, NOAA GML CO2, and NOAA NCEI billion-dollar disaster events
-- Current climate data panel combining daily NWS alerts with official NASA/NOAA/NCEI inputs plus FEMA, NASA FIRMS, AirNow, NOAA CPC/NWPS, EPA GHGRP, EPA eGRID, EIA, NGFS, and SEC EDGAR source mapping
-- Dedicated daily climate intelligence board linking current alerts to related stocks, ETF recommendations, and daily reminders
-- Stock and ETF climate-relevance scoring from NWS alert type, alert intensity, market momentum, and climate exposure mapping
-- Auto-refreshing market and climate allocation views for a cleaner investor cockpit
-- Left-side section navigation for a China-platform-like trading cockpit workflow
-- Market and issuer CVOR heat strips for faster visual scanning
-- High-DPI chart rendering, responsive tables, and desktop/mobile layout scaling
-- Plain-English client explanation panel
+- Investment Committee View combining strategic posture, tactical action, largest risk contributor, evidence confidence, and affected holdings
+- Portfolio construction workspace with ETF-only, ETF + stock, and stock-only modes; short/long horizons; and mandate-aware sizing
+- Explicit portfolio risk budget with maximum position, HHI, effective positions, climate active share, weighted holding-tail proxy, capital at risk, and internal watch checks
+- Market-only ablation for every holding so clients can see exactly how climate data changed the target weight
+- Interactive Scenario & Event Lab across country, sector, issuer, and portfolio scopes
+- Long-term target-vs-reference repricing through climate-adjusted cash flows and present value
+- Short-term NWS event nowcast translating hazard intensity, exposure beta, and vulnerability into tactical basis points
+- Conditional scenario-tail matrix with no assigned occurrence probabilities and no claim of regulatory Expected Shortfall
+- Point-in-time climate buy/sell walk-forward validation over 3 weeks, 3 months, and 3 years using the selected portfolio universe
+- Climate Signals, Data Lineage & Coverage view combining NWS, NASA GISTEMP, NOAA GML CO2, NCEI disasters, allocation transmission, source status, and known data gaps
+- Explicit separation of observed inputs, calibrated proxies, and missing facility/revenue/supply-chain data
+- Company-level Method 2 Climate VaR scanner with BAU vs 2C comparison, P95/P99/CVOR95, market-cap context, and data-quality labels
+- Automatic climate universe ranked from market behavior, live climate conditions, sector transmission, issuer resilience, and Method 2 tail risk
+- Institutional, responsive UI focused on decision, attribution, risk budget, and validation rather than generic quote or chart screens
 
 ## U.S. Market Assumptions
 

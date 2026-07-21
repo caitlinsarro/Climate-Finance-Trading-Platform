@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Jenneson Climate-Finance Trading & Risk Platform
+Jennison Climate-Finance Trading & Risk Platform
 
 Local client-facing prototype inspired by the existing China A-share dashboard.
 Run:
@@ -64,7 +64,7 @@ NCEI_BILLION_EVENTS_JSON_URL = "https://www.ncei.noaa.gov/monitoring-content/bil
 CLIMATE_DATA_CACHE = DATA_DIR / "official_climate_data_cache.json"
 NWS_ACTIVE_ALERTS_URL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert"
 DAILY_CLIMATE_CACHE = DATA_DIR / "daily_climate_alerts_cache.json"
-NWS_USER_AGENT = "JennesonClimateFinancePrototype/1.0 (local research)"
+NWS_USER_AGENT = "JennisonClimateFinancePrototype/1.0 (local research)"
 DAILY_RECO_BACKTEST_CACHE = DATA_DIR / "daily_recommendation_backtest_cache.json"
 FEMA_NRI_URL = "https://www.fema.gov/flood-maps/products-tools/national-risk-index"
 FEMA_NRI_DATA_URL = "https://www.fema.gov/about/openfema/data-sets/national-risk-index-data"
@@ -2399,6 +2399,44 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
             {"step": "Event nowcast", "output": "NWS hazard intensity becomes a separate tactical selection overlay"},
             {"step": "Validation", "output": "Walk-forward backtest, market-only ablation, and parameter sensitivity"},
         ],
+        "model_coverage": [
+            {
+                "layer": "Live physical event nowcast",
+                "coverage": "NWS alert type, intensity, and affected area",
+                "status": "Operational",
+                "decision_use": "Tactical sector and security selection overlay",
+            },
+            {
+                "layer": "Chronic physical state",
+                "coverage": "NASA temperature, NOAA CO2, NCEI disaster history",
+                "status": "Operational",
+                "decision_use": "Regime and long-run physical-pressure calibration",
+            },
+            {
+                "layer": "Scenario repricing",
+                "coverage": "Target-reference acute, chronic, and transition paths",
+                "status": "Calibrated proxy",
+                "decision_use": "Conditional value impact and portfolio stress",
+            },
+            {
+                "layer": "Issuer downscaling",
+                "coverage": "Sector sensitivity, fixed-asset and labor-intensity ratios",
+                "status": "Proxy",
+                "decision_use": "Security-level cash-flow and tail-risk estimate",
+            },
+            {
+                "layer": "Facility geolocation",
+                "coverage": "Plant, office, supplier, and insured-asset coordinates",
+                "status": "Data gap",
+                "decision_use": "Required for bottom-up peril damage and business interruption",
+            },
+            {
+                "layer": "Revenue and supply-chain mapping",
+                "coverage": "Regional revenue, product taxonomy, supplier concentration",
+                "status": "Data gap",
+                "decision_use": "Required for Bloomberg-style micro-transition attribution",
+            },
+        ],
         "headline": (
             f"{daily_signal.get('top_driver', 'climate').replace('_', ' ')} is the top daily driver; "
             f"transition pressure is {'high' if transition_score >= 0.62 else 'moderate' if transition_score >= 0.38 else 'low'}."
@@ -2669,6 +2707,84 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
     for row in rows:
         row.pop("raw_weight", None)
 
+    weights = [safe_float(row.get("target_weight"), 0.0) for row in rows]
+    hhi = sum(weight * weight for weight in weights)
+    sector_weights = {}
+    for row in rows:
+        sector_name = row.get("sector") or "Unclassified"
+        sector_weights[sector_name] = sector_weights.get(sector_name, 0.0) + safe_float(row.get("target_weight"), 0.0)
+    top_sector, top_sector_weight = max(sector_weights.items(), key=lambda item: item[1], default=("-", 0.0))
+    top_risk_row = max(
+        rows,
+        key=lambda row: safe_float(row.get("target_weight"), 0.0) * safe_float(row.get("cvor_proxy"), 0.0),
+        default={},
+    )
+    top_overweight = max(rows, key=lambda row: safe_float(row.get("climate_weight_delta"), 0.0), default={})
+    top_underweight = min(rows, key=lambda row: safe_float(row.get("climate_weight_delta"), 0.0), default={})
+    weighted_tail_proxy = sum(
+        safe_float(row.get("target_weight"), 0.0) * safe_float(row.get("cvor_proxy"), 0.0) for row in rows
+    )
+    weighted_physical = sum(
+        safe_float(row.get("target_weight"), 0.0) * safe_float(row.get("physical_risk"), 0.0) for row in rows
+    )
+    weighted_transition = sum(
+        safe_float(row.get("target_weight"), 0.0) * safe_float(row.get("transition_risk"), 0.0) for row in rows
+    )
+    weighted_confidence = sum(
+        safe_float(row.get("target_weight"), 0.0) * safe_float(row.get("data_confidence"), 0.0) for row in rows
+    )
+    weighted_climate_alpha = sum(
+        safe_float(row.get("target_weight"), 0.0) * safe_float(row.get("climate_alpha"), 0.0) for row in rows
+    )
+    climate_active_share = 0.5 * sum(abs(safe_float(row.get("climate_weight_delta"), 0.0)) for row in rows)
+    max_position = max(weights, default=0.0)
+    effective_positions = 1 / hhi if hhi > 0 else 0.0
+    budget_checks = [
+        {
+            "name": "Single-position concentration",
+            "value": round(max_position, 4),
+            "limit": 0.20,
+            "status": "Pass" if max_position <= 0.20 else "Watch",
+            "interpretation": "Internal watch threshold, not a regulatory limit.",
+        },
+        {
+            "name": "Weighted holding tail proxy",
+            "value": round(weighted_tail_proxy, 4),
+            "limit": 0.08,
+            "status": "Pass" if weighted_tail_proxy <= 0.08 else "Watch",
+            "interpretation": "Weighted security-level P95/CVOR proxy; separate from scenario tail stress.",
+        },
+        {
+            "name": "Effective positions",
+            "value": round(effective_positions, 2),
+            "limit": 6.0,
+            "status": "Pass" if effective_positions >= 6.0 else "Watch",
+            "interpretation": "Inverse HHI; higher values indicate broader diversification.",
+        },
+        {
+            "name": "Model confidence",
+            "value": round(weighted_confidence, 4),
+            "limit": 0.65,
+            "status": "Pass" if weighted_confidence >= 0.65 else "Watch",
+            "interpretation": "Weight-averaged source and issuer mapping confidence.",
+        },
+    ]
+    if weighted_tail_proxy >= 0.08 or max_position > 0.20:
+        posture = "Defensive tilt"
+        strategic_action = "Reduce the largest tail-risk contributor before adding climate opportunity exposure."
+    elif weighted_climate_alpha >= 0.05:
+        posture = "Selective climate overweight"
+        strategic_action = "Maintain the core book and fund resilient opportunities from climate-sensitive underweights."
+    else:
+        posture = "Climate-aware neutral"
+        strategic_action = "Keep benchmark-like exposure while using climate risk as a position-sizing constraint."
+    if daily_pressure >= 0.45:
+        tactical_action = "Tighten short-horizon risk and require stronger market confirmation for new buys."
+    elif daily_pressure >= 0.20:
+        tactical_action = "Keep the live event overlay active; rebalance only where sector transmission is material."
+    else:
+        tactical_action = "No broad tactical hedge; monitor event-sensitive sectors and retain strategic weights."
+
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "mode": mode,
@@ -2691,6 +2807,34 @@ def portfolio_optimizer_payload(mode="etf_stock", capital=None, horizon="long", 
         ),
         "daily_climate_overlay": daily_pressure,
         "climate_state": climate_state,
+        "risk_budget": {
+            "max_position": round(max_position, 4),
+            "hhi": round(hhi, 4),
+            "effective_positions": round(effective_positions, 2),
+            "top_sector": top_sector,
+            "top_sector_weight": round(top_sector_weight, 4),
+            "climate_active_share": round(climate_active_share, 4),
+            "weighted_tail_proxy": round(weighted_tail_proxy, 4),
+            "capital_at_tail_proxy": round(weighted_tail_proxy * capital_value, 2),
+            "weighted_physical_risk": round(weighted_physical, 4),
+            "weighted_transition_risk": round(weighted_transition, 4),
+            "weighted_climate_alpha": round(weighted_climate_alpha, 4),
+            "weighted_confidence": round(weighted_confidence, 4),
+            "largest_risk_contributor": top_risk_row.get("ticker", "-"),
+            "largest_climate_overweight": top_overweight.get("ticker", "-"),
+            "largest_climate_overweight_delta": round(safe_float(top_overweight.get("climate_weight_delta"), 0.0), 4),
+            "largest_climate_underweight": top_underweight.get("ticker", "-"),
+            "largest_climate_underweight_delta": round(safe_float(top_underweight.get("climate_weight_delta"), 0.0), 4),
+            "checks": budget_checks,
+        },
+        "investment_view": {
+            "posture": posture,
+            "strategic_action": strategic_action,
+            "tactical_action": tactical_action,
+            "largest_risk": f"{top_risk_row.get('ticker', '-')} is the largest weighted holding-tail contributor.",
+            "largest_opportunity": f"{top_overweight.get('ticker', '-')} receives the largest climate-aware overweight versus the market-only book.",
+            "governance_note": "Risk-budget thresholds are transparent internal watch levels. They are not regulatory limits or investment advice.",
+        },
         "validation": {
             "same_pick_benchmark": "Backtest compares optimizer weights against equal-weight same holdings.",
             "market_only_ablation": "Each row includes a market-only implied weight so the client can see how climate/CVOR changed allocation.",
@@ -3774,7 +3918,7 @@ def build_payload():
     latest_regime = regime_for_year(latest_year, climate_rows)
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "platform": "Jenneson Climate-Finance Trading & Risk Platform",
+        "platform": "Jennison Climate-Finance Trading & Risk Platform",
         "climate_source": "NWS + NASA/NOAA/NCEI official inputs, with FEMA/EPA/EIA/NGFS/SEC source-ready risk mapping",
         "market_source": market_source,
         "methodology": "Target-reference climate scenario repricing plus a separate NWS event-nowcast overlay",
@@ -3821,7 +3965,7 @@ HTML = r"""<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jenneson Climate-Finance Trading & Risk Platform</title>
+  <title>Jennison Climate-Finance Trading & Risk Platform</title>
   <style>
     :root {
       --bg:#f5f7fb; --panel:#ffffff; --panel2:#f9fbff; --line:#dbe3ef; --text:#172033;
@@ -3832,7 +3976,7 @@ HTML = r"""<!doctype html>
     html{scroll-behavior:smooth}
     body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;font-size:13px;line-height:1.35;-webkit-font-smoothing:antialiased}
     header{min-height:52px;display:flex;align-items:center;gap:14px;padding:8px 18px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:20;box-shadow:0 1px 12px rgba(18,31,54,.05)}
-    .brand-dot{width:9px;height:24px;border-radius:8px;background:linear-gradient(180deg,#2563eb,#16a34a)}
+    .brand-dot{width:9px;height:24px;border-radius:0;background:#2563eb}
     h1{font-size:16px;margin:0;font-weight:800}
     .badge{padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);font-size:12px}
     .layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px;padding:14px;max-width:1880px;margin:0 auto}
@@ -3958,112 +4102,168 @@ HTML = r"""<!doctype html>
     #modelAttributionTable,#modelHazardTable,#modelResolutionTable,#modelInstrumentTable{min-width:720px}
     @media (max-width:1320px){.model-lab-controls{grid-template-columns:repeat(4,minmax(0,1fr))}.method-flow{grid-template-columns:repeat(3,minmax(0,1fr))}.method-step:nth-child(3){border-right:0}.method-step:nth-child(-n+3){border-bottom:1px solid #dbe3ef}.lab-kpi{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media (max-width:1100px){header{position:relative}.layout{grid-template-columns:1fr}.grid.kpi,.grid.two,.grid.three,.grid.four,.client-summary,.split-table,.lab-split{grid-template-columns:1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.method-flow{grid-template-columns:1fr 1fr}.method-step{border-bottom:1px solid #dbe3ef}.method-step:nth-child(odd){border-right:1px solid #dbe3ef}.method-step:nth-child(even){border-right:0}.lab-column+ .lab-column{padding-left:0;border-left:0}.lab-kpi{grid-template-columns:1fr 1fr}aside{position:relative;top:0;height:auto}.kpi-value{font-size:21px}table{min-width:760px}}
+
+    /* Institutional research workspace: hard-edged light, quiet data density. */
+    :root{
+      --bg:#f4f4ef;--panel:#ffffff;--panel2:#f8f8f4;--line:#d8d8d0;--text:#111318;
+      --muted:#666861;--blue:#1549ff;--green:#008b62;--red:#d51f3f;--amber:#a85d00;
+      --electric:#1c5cff;--cyan:#00c8e8;--acid:#b7ef18;--pink:#ff3aa7;--black:#111318;
+      --shadow:none;
+    }
+    body{background:var(--bg);font-family:Inter,Arial,sans-serif;font-size:12px;line-height:1.4;letter-spacing:0}
+    header{min-height:60px;padding:0 22px;background:#fff;border-bottom:1px solid var(--black);box-shadow:none;gap:13px}
+    h1{font-size:15px;font-weight:800;letter-spacing:0}
+    .light-mark{display:flex;align-items:flex-end;gap:3px;width:30px;height:24px}
+    .light-mark span{display:block;width:5px;border-radius:0}
+    .light-mark span:nth-child(1){height:24px;background:var(--electric);box-shadow:0 0 9px rgba(28,92,255,.55)}
+    .light-mark span:nth-child(2){height:17px;background:var(--cyan);box-shadow:0 0 9px rgba(0,200,232,.5)}
+    .light-mark span:nth-child(3){height:10px;background:var(--acid);box-shadow:0 0 8px rgba(183,239,24,.55)}
+    .brand-dot{display:none}
+    .badge{padding:4px 7px;border:0;border-left:2px solid var(--line);border-radius:0;background:transparent;color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:700}
+    .layout{grid-template-columns:214px minmax(0,1fr);gap:28px;padding:0 26px 40px;max-width:1900px}
+    aside{top:60px;height:calc(100vh - 60px);padding:25px 18px 30px 0;background:transparent;border:0;border-right:1px solid var(--line);border-radius:0}
+    main{gap:24px;padding-top:24px}
+    #summary-section{order:1}#client-section{order:2}#optimizer-section{order:3}#model-lab-section{order:4}
+    #cvor-section{order:5}#daily-reco-backtest-section{order:6}#climate-data-section{order:7}#issuer-section{order:8}
+    .side-nav{gap:2px;margin:0 0 26px}
+    .side-nav a{min-height:36px;padding:8px 9px;border:0;border-left:2px solid transparent;border-radius:0;background:transparent;color:#3c3e39;font-size:11px;font-weight:700}
+    .side-nav a span{color:#92948d;font-size:9px;text-transform:uppercase}
+    .side-nav a:hover,.side-nav a:focus{background:#fff;border-left-color:var(--electric);color:var(--black)}
+    .side-block{padding:14px 0;border-top:1px solid var(--line)}
+    .side-kicker{font-size:9px;font-weight:800;text-transform:uppercase;color:#8a8c84;margin-bottom:8px}
+    .side-value{font-size:13px;font-weight:800;color:var(--black)}
+    .side-copy{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.45}
+    .panel{position:relative;background:transparent;border:0;border-top:1px solid var(--black);border-bottom:1px solid var(--line);border-radius:0;box-shadow:none;overflow:visible;scroll-margin-top:76px}
+    .panel::before{content:"";position:absolute;left:0;top:-2px;width:86px;height:3px;background:var(--electric);box-shadow:0 0 10px rgba(28,92,255,.42)}
+    .panel.accent-acid::before{background:var(--acid);box-shadow:0 0 10px rgba(183,239,24,.5)}
+    .panel.accent-cyan::before{background:var(--cyan);box-shadow:0 0 10px rgba(0,200,232,.45)}
+    .panel.accent-pink::before{background:var(--pink);box-shadow:0 0 10px rgba(255,58,167,.35)}
+    .panel-head{padding:15px 0 11px;background:transparent;border-bottom:1px solid var(--line);font-size:12px;letter-spacing:0}
+    .panel-head>span:first-child{font-size:14px;font-weight:850}
+    .panel-head>span:last-child{font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:750;text-align:right}
+    .panel-body{padding:16px 0 20px;overflow:auto}
+    .grid{gap:7px}.grid.kpi{grid-template-columns:repeat(6,minmax(128px,1fr))}
+    .kpi-card,.signal-card{background:#fff;border:1px solid var(--line);border-radius:2px;box-shadow:none}
+    .kpi-card{min-height:86px;padding:13px}
+    .kpi-label,.signal-card .label{font-size:9px;color:#777970;text-transform:uppercase;font-weight:800}
+    .kpi-value{font-size:21px;font-weight:800;margin-top:8px;letter-spacing:0}
+    .signal-card{min-height:76px;padding:11px}
+    .signal-card .value{font-size:18px;font-weight:800;margin-top:6px}
+    .client-summary{grid-template-columns:minmax(290px,.85fr) minmax(480px,1.15fr);gap:8px}
+    .client-callout{position:relative;background:var(--black);color:#fff;border:0;border-radius:2px;padding:18px;min-height:158px;overflow:hidden}
+    .client-callout::after{content:"";position:absolute;right:0;bottom:20px;width:7px;height:82px;background:var(--acid);box-shadow:0 0 13px rgba(183,239,24,.7)}
+    .client-callout .title{color:#b9bbb5;font-size:9px;text-transform:uppercase}
+    .client-callout .headline{font-size:28px;color:#fff;margin:10px 0 6px}
+    .decision-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:8px}
+    .decision-cell{background:#fff;border:1px solid var(--line);border-radius:2px;padding:12px;min-height:102px}
+    .decision-cell .eyebrow{font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:800}
+    .decision-cell .decision{font-size:14px;font-weight:800;margin:7px 0 4px}
+    .decision-cell .detail{font-size:10px;color:var(--muted)}
+    .institution-controls{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:7px;align-items:end;margin-bottom:10px}
+    .control-wide{grid-column:span 2}
+    label{font-size:9px;text-transform:uppercase;color:#6d6f68;margin-bottom:5px}
+    textarea,input,select{border:1px solid #cfcfc7;border-radius:2px;padding:8px;background:#fff;color:var(--text)}
+    textarea:focus,input:focus,select:focus{outline:2px solid rgba(28,92,255,.14);border-color:var(--electric)}
+    button{border:1px solid var(--black);background:var(--black);color:#fff;border-radius:2px;padding:8px 11px;font-weight:800}
+    button:hover{background:var(--electric);border-color:var(--electric)}
+    button.secondary{background:#fff;color:var(--black);border-color:#bfc0b9}
+    button.secondary:hover{color:var(--electric);border-color:var(--electric)}
+    .toolbar button.active,.window-tabs button.active{background:var(--electric);border-color:var(--electric)}
+    .auto-universe-note,.model-rule{border:0;border-left:3px solid var(--cyan);border-radius:0;background:#f3fbfc;padding:9px 11px}
+    details.advanced-box{border:1px solid var(--line);border-radius:2px;background:#fff;padding:9px;margin:8px 0}
+    details.advanced-box summary{color:var(--black)}
+    .method-flow{border:1px solid var(--line);border-radius:2px;background:#fff}
+    .method-step{border-color:var(--line);min-height:84px}
+    .method-step .number{color:var(--electric);font-size:9px}
+    .method-step .detail{color:var(--muted)}
+    .lab-split{border-color:var(--line)}
+    .lab-column+.lab-column{border-color:var(--line)}
+    .risk-budget-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin-bottom:12px}
+    .budget-checks{min-width:720px}
+    .status-pass{color:var(--green);font-weight:800}.status-watch{color:var(--red);font-weight:800}.status-proxy{color:var(--amber);font-weight:800}
+    table{background:#fff;min-width:780px}
+    th,td{padding:8px 7px;border-bottom:1px solid #e7e7e1}
+    th{font-size:9px;text-transform:uppercase;color:#666861;background:#f7f7f3;position:sticky;top:0;z-index:1}
+    tr:hover{background:#f4f8ff}
+    .pill{border-radius:2px;padding:3px 5px;font-size:9px;text-transform:uppercase;font-weight:800}
+    .risk-meter,.score-bar,.attribution-track{border-radius:0;background:#e8e8e2}
+    .risk-meter span,.score-bar span,.attribution-track span{border-radius:0}
+    .metric-strip{gap:7px;padding-bottom:8px}
+    .metric-strip .signal-card{flex-basis:170px}
+    canvas{border:1px solid var(--line);border-radius:2px}
+    .source-card,.heat-cell{border-radius:2px}
+    .heat-cell.pos{background:#f0fff8}.heat-cell.neg{background:#fff4f6}
+    .split-table>div{min-width:0;overflow:auto}
+    .section-title{font-size:11px;text-transform:uppercase;margin:6px 0 8px}
+    .disclosure-line{font-size:10px;color:var(--muted);padding:9px 0;border-top:1px solid var(--line)}
+    .issuer-controls{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:7px;align-items:end;max-width:650px;margin-bottom:12px}
+    .technical-details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+    .technical-details summary{cursor:pointer;font-weight:800;font-size:11px;text-transform:uppercase}
+    @media (max-width:1320px){.risk-budget-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.decision-grid{grid-template-columns:1fr 1fr}.institution-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.control-wide{grid-column:span 1}}
+    @media (max-width:1100px){header{position:sticky}.layout{grid-template-columns:1fr;padding:0 14px 30px;gap:12px}aside{position:relative;top:0;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:10px 0}.side-nav{display:flex;overflow-x:auto;margin:0}.side-nav a{flex:0 0 auto;border-left:0;border-bottom:2px solid transparent}.side-nav a:hover{border-left:0;border-bottom-color:var(--electric)}.side-block{display:none}main{padding-top:10px}.grid.kpi{grid-template-columns:repeat(3,minmax(0,1fr))}.client-summary{grid-template-columns:1fr}.institution-controls{grid-template-columns:1fr 1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.split-table,.lab-split{grid-template-columns:1fr}.lab-column+.lab-column{padding-left:0;border-left:0}.panel-head>span:last-child{max-width:48%}}
+    @media (max-width:640px){header{padding:0 12px;min-height:54px}header .badge:not(#timeBadge){display:none}h1{font-size:13px}.layout{padding:0 10px 24px}.grid.kpi{grid-template-columns:1fr 1fr}.kpi-card{min-height:76px}.decision-grid,.risk-budget-grid,.institution-controls,.model-lab-controls,.lab-kpi{grid-template-columns:1fr}.grid.two,.grid.three,.grid.four{grid-template-columns:1fr}.method-flow{grid-template-columns:1fr}.method-step{border-right:0;border-bottom:1px solid var(--line)}.panel-head{align-items:flex-start;gap:10px}.panel-head>span:last-child{font-size:8px}.client-callout .headline{font-size:24px}.issuer-controls{grid-template-columns:1fr}table{min-width:700px}}
   </style>
 </head>
 <body>
 <header>
-  <div class="brand-dot"></div>
-  <h1>Jenneson Climate-Finance Trading & Risk Platform</h1>
+  <div class="light-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+  <h1>Jennison Climate-Finance Trading & Risk Platform</h1>
   <span class="badge" id="regimeBadge">Loading regime...</span>
-  <span class="badge" id="sourceBadge">Data source: loading</span>
+  <span class="badge" id="sourceBadge">Sources loading</span>
   <span style="margin-left:auto" class="badge" id="timeBadge">-</span>
 </header>
 <div class="layout">
   <aside>
-    <nav class="side-nav" aria-label="Dashboard sections">
-      <a href="#client-section">Client View <span>Action</span></a>
-      <a href="#model-lab-section">Model Lab <span>Long / Short</span></a>
-      <a href="#market-section">Market <span>OHLCV</span></a>
-      <a href="#daily-climate-section">Daily Climate <span>Signal</span></a>
-      <a href="#climate-data-section">Climate Data <span>Sources</span></a>
-      <a href="#daily-reco-backtest-section">Portfolio Test <span>3W/3M/3Y</span></a>
-      <a href="#allocation-section">Allocation <span>ETF</span></a>
-      <a href="#optimizer-section">Optimizer <span>Portfolio</span></a>
-      <a href="#issuer-section">Issuers <span>Method 2</span></a>
+    <nav class="side-nav" aria-label="Research workspace sections">
+      <a href="#client-section">Investment View <span>Decision</span></a>
+      <a href="#optimizer-section">Portfolio <span>Risk Budget</span></a>
+      <a href="#model-lab-section">Scenario Lab <span>Repricing</span></a>
+      <a href="#cvor-section">Stress Matrix <span>Tail</span></a>
+      <a href="#daily-reco-backtest-section">Validation <span>3W / 3M / 3Y</span></a>
+      <a href="#climate-data-section">Climate Signals <span>Lineage</span></a>
+      <a href="#issuer-section">Issuer Deep Dive <span>Method 2</span></a>
     </nav>
-    <label>Current Data Feeds</label>
-    <div class="hint">
-      Prices use live/delayed U.S. stock and ETF data. Climate combines NWS, NASA, NOAA/NCEI, and source-ready FEMA/EPA/EIA/NGFS/SEC risk mapping.
+    <div class="side-block">
+      <div class="side-kicker">Research objective</div>
+      <div class="side-value">Climate-aware alpha with explicit risk budgets</div>
+      <div class="side-copy">Country-to-security repricing, live event transmission, portfolio construction, and point-in-time validation.</div>
     </div>
-    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
-    <label>Company Climate VaR Scanner</label>
-    <textarea id="tickerInput">AAPL, MSFT, XOM, NEE, JPM</textarea>
-    <button onclick="scanCompanies()">Scan Issuers</button>
-    <button class="secondary" onclick="loadDashboard()" style="margin-top:8px;width:100%">Refresh Dashboard</button>
-    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
-    <label>Rolling K-Line Watchlist</label>
-    <textarea id="chartInput">SPY, QQQ, AAPL, XOM, ICLN</textarea>
-    <button onclick="loadMarketChart()" style="width:100%">Load K-Line</button>
-    <div class="hint" style="margin-top:8px">
-      Works for U.S. stocks and ETFs. Today mode uses 1-minute intraday bars and refreshes the chart frequently.
+    <div class="side-block">
+      <div class="side-kicker">Model status</div>
+      <div class="side-value" id="sideModelStatus">Conditional, not probabilistic</div>
+      <div class="side-copy">Scenario tail, pressure scores, and market risk remain separate to prevent double counting.</div>
     </div>
-    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
-    <label>Portfolio Optimizer</label>
-    <div class="control-row">
-      <select id="optimizerMode">
-        <option value="etf_stock">ETF + stock</option>
-        <option value="etf_only">ETF only</option>
-        <option value="stock_only">Stock only</option>
-      </select>
-      <select id="optimizerHorizon">
-        <option value="long">Long-term</option>
-        <option value="short">Short-term</option>
-      </select>
+    <div class="side-block">
+      <div class="side-kicker">Coverage discipline</div>
+      <div class="side-value">Observed + proxy + gap</div>
+      <div class="side-copy">Facility geolocation and company revenue/supply-chain mapping are shown as data gaps, never implied as observed inputs.</div>
     </div>
-    <div class="control-row">
-      <select id="optimizerStyle">
-        <option value="balanced">Balanced</option>
-        <option value="climate_defense">Climate defense</option>
-        <option value="growth">Growth</option>
-        <option value="low_vol">Low volatility</option>
-      </select>
-      <input id="optimizerCapital" value="50000000" inputmode="numeric">
-    </div>
-    <div class="auto-universe-note" id="optimizerUniverseNote">
-      Automatic universe is on. The model selects climate-related ETFs and stocks from the daily climate signal, market trend, and sector risk profile.
-    </div>
-    <details class="advanced-box">
-      <summary>Advanced custom universe</summary>
-      <label style="margin-top:8px">ETF override</label>
-      <textarea id="optimizerEtfs" placeholder="Optional: SPY, QQQ, XLK"></textarea>
-      <label>Stock override</label>
-      <textarea id="optimizerStocks" placeholder="Optional: AAPL, MSFT, NVDA"></textarea>
-      <div class="hint">Leave blank to use automatic climate picks.</div>
-    </details>
-    <button onclick="runOptimizer()" style="width:100%">Run Automatic Optimizer</button>
-    <div class="hint" style="margin-top:8px">
-      Chooses weights, dollar allocation, and estimated shares based on market trend, volatility, liquidity, climate CVOR, and holding period.
+    <div class="side-block">
+      <button class="secondary" onclick="loadDashboard()" style="width:100%">Refresh research view</button>
     </div>
   </aside>
   <main>
     <section class="grid kpi" id="summary-section">
-      <div class="kpi-card"><div class="kpi-label">Climate Regime</div><div id="kpiRegime" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">Daily Climate Alerts</div><div id="kpiScore" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">Daily Overlay</div><div id="kpiReturn" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">Top Climate Driver</div><div id="kpiExcess" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">Climate Data Year</div><div id="kpiDrawdown" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">Scenario Tail Proxy</div><div id="kpiCvor" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Portfolio state</div><div id="kpiRegime" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Live NWS alerts</div><div id="kpiScore" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Tactical pressure</div><div id="kpiReturn" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Primary hazard</div><div id="kpiExcess" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Climate vintage</div><div id="kpiDrawdown" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Scenario tail</div><div id="kpiCvor" class="kpi-value">-</div></div>
     </section>
 
-    <section class="panel" id="client-section">
-      <div class="panel-head"><span>Client Climate Intelligence Summary</span><span id="clientSummaryTag">Physical + transition + CVOR</span></div>
+    <section class="panel accent-acid" id="client-section">
+      <div class="panel-head"><span>Investment Committee View</span><span id="clientSummaryTag">Decision, evidence, confidence</span></div>
       <div class="panel-body">
         <div id="clientSummary" class="client-summary"></div>
-        <div class="split-table" style="margin-top:10px">
-          <div>
-            <div class="section-title">Top Affected Holdings</div>
-            <table id="clientAffectedTable"></table>
-          </div>
-          <div>
-            <div class="section-title">Risk Source Attribution</div>
-            <table id="clientSourceTable"></table>
-          </div>
-        </div>
+        <div id="investmentCommitteeStrip" class="decision-grid"></div>
+        <div class="section-title" style="margin-top:14px">Holdings requiring committee attention</div>
+        <table id="clientAffectedTable"></table>
       </div>
     </section>
 
-    <section class="panel" id="model-lab-section">
-      <div class="panel-head"><span>Climate Scenario &amp; Event Lab</span><span id="modelLabTag">Country -> Sector -> Issuer -> Portfolio</span></div>
+    <section class="panel accent-pink" id="model-lab-section">
+      <div class="panel-head"><span>Scenario Repricing &amp; Event Transmission</span><span id="modelLabTag">Country -> sector -> issuer -> portfolio</span></div>
       <div class="panel-body">
         <div class="model-lab-controls">
           <div>
@@ -4178,74 +4378,8 @@ HTML = r"""<!doctype html>
       </div>
     </section>
 
-    <section class="grid two" id="market-section">
-      <div class="panel">
-        <div class="panel-head"><span>Rolling K-Line Chart</span><span id="marketSourceTag">Market data loading</span></div>
-        <div class="panel-body">
-          <div class="toolbar">
-            <button class="secondary range-btn" onclick="setMarketWindow('1d','1m', this)">Today</button>
-            <button class="secondary range-btn" onclick="setMarketWindow('5d','5m', this)">5D</button>
-            <button class="secondary range-btn" onclick="setMarketWindow('1mo','1d', this)">1M</button>
-            <button class="secondary range-btn" onclick="setMarketWindow('3mo','1d', this)">3M</button>
-            <button class="active range-btn" onclick="setMarketWindow('6mo','1d', this)">6M</button>
-            <button class="secondary range-btn" onclick="setMarketWindow('1y','1d', this)">1Y</button>
-            <button class="secondary range-btn" onclick="setMarketWindow('2y','1d', this)">2Y</button>
-            <button class="secondary" onclick="loadMarketChart()">Refresh</button>
-            <span id="activeTickerTag" class="pill info">-</span>
-            <button id="layerMa" class="chart-tool active" onclick="toggleChartLayer('ma', this)">MA20</button>
-            <button id="layerEma" class="chart-tool active" onclick="toggleChartLayer('ema', this)">EMA50</button>
-            <button id="layerVwap" class="chart-tool active" onclick="toggleChartLayer('vwap', this)">VWAP</button>
-            <button id="layerBands" class="chart-tool secondary" onclick="toggleChartLayer('bands', this)">BB</button>
-            <button id="layerVolume" class="chart-tool active" onclick="toggleChartLayer('volume', this)">Volume</button>
-            <button id="layerMacd" class="chart-tool secondary" onclick="toggleChartLayer('macd', this)">MACD</button>
-            <button id="chartThemeBtn" class="chart-tool secondary" onclick="toggleChartTheme()">Dark</button>
-            <button class="chart-tool secondary" onclick="fitTradingChart()">Fit</button>
-            <button class="chart-tool secondary" onclick="exportTradingChart()">Snapshot</button>
-          </div>
-          <div id="chartShell" class="chart-shell">
-            <div id="chartReadout" class="chart-readout">Loading market chart</div>
-            <div id="tradingChart" class="trading-chart"></div>
-            <div id="indicatorChart" class="indicator-chart"></div>
-            <canvas id="candleChart" class="tall chart-fallback"></canvas>
-          </div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><span>Current Quote Board</span><span>Stocks + ETFs</span></div>
-        <div class="panel-body">
-          <table id="quoteTable"></table>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><span>Current ETF Prices</span><span>Core, sectors, rates, climate, commodities</span></div>
-      <div class="panel-body">
-        <table id="etfTable"></table>
-      </div>
-    </section>
-
-    <section class="panel" id="daily-climate-section">
-      <div class="panel-head"><span>Daily Climate Intelligence</span><span id="dailyClimateTag">Loading daily signal</span></div>
-      <div class="panel-body">
-        <div id="dailyClimateSummary" class="grid four" style="margin-bottom:10px"></div>
-        <div class="grid two">
-          <div>
-            <div class="section-title">Most Related Stocks</div>
-            <table id="dailyStockTable"></table>
-          </div>
-          <div>
-            <div class="section-title">ETF Recommendations</div>
-            <table id="dailyEtfRecoTable"></table>
-          </div>
-        </div>
-        <div class="section-title" style="margin-top:12px">Daily Climate Alerts</div>
-        <table id="dailyAlertTable"></table>
-      </div>
-    </section>
-
-    <section class="panel" id="daily-reco-backtest-section">
-      <div class="panel-head"><span>Climate Buy/Sell Walk-Forward Backtest</span><span id="dailyRecoBacktestTag">3W / 3M / 3Y walk-forward</span></div>
+    <section class="panel accent-acid" id="daily-reco-backtest-section">
+      <div class="panel-head"><span>Point-in-Time Walk-Forward Validation</span><span id="dailyRecoBacktestTag">Historical signal date -> next trading day</span></div>
       <div class="panel-body">
         <div class="window-tabs">
           <button class="active reco-window-btn" onclick="setRecoBacktestWindow('3w', this)">3W</button>
@@ -4269,76 +4403,114 @@ HTML = r"""<!doctype html>
       </div>
     </section>
 
-    <section class="grid two" id="climate-data-section">
-      <div class="panel">
-        <div class="panel-head"><span>Climate Data Center</span><span>NWS + NASA/NOAA/NCEI + source-ready transition data</span></div>
-        <div class="panel-body">
-          <div id="dailyClimateCards" class="metric-strip" aria-label="Scrollable current climate data cards"></div>
-          <div class="data-note" style="margin:10px 0 4px">
-            <span class="pill info">Daily alerts</span>
-            <span class="pill info">Temperature</span>
-            <span class="pill info">CO2</span>
-            <span class="pill info">Disaster frequency</span>
-            <span class="pill info">Transition data</span>
+    <section class="panel accent-cyan" id="climate-data-section">
+      <div class="panel-head"><span>Climate Signals, Data Lineage &amp; Coverage</span><span id="dailyClimateTag">NWS + NASA + NOAA + NCEI</span></div>
+      <div class="panel-body">
+        <div id="dailyClimateSummary" class="risk-budget-grid" style="margin-bottom:10px"></div>
+        <div class="split-table">
+          <div>
+            <div class="section-title">Live hazard tape</div>
+            <table id="dailyAlertTable"></table>
           </div>
-          <div id="climateSourceGrid" class="source-grid" style="margin:10px 0"></div>
-          <table id="climateDataTable"></table>
+          <div>
+            <div class="section-title">Allocation transmission</div>
+            <table id="dailyImpactTable"></table>
+          </div>
         </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><span>How Climate Data Moves Allocation</span><span>Daily +/- bps</span></div>
-        <div class="panel-body">
-          <table id="dailyImpactTable"></table>
+        <div class="split-table" style="margin-top:14px">
+          <div>
+            <div class="section-title">Observed model inputs</div>
+            <table id="climateDataTable"></table>
+          </div>
+          <div>
+            <div class="section-title">Source lineage</div>
+            <table id="clientSourceTable"></table>
+          </div>
         </div>
+        <div class="section-title" style="margin-top:14px">Coverage and known gaps</div>
+        <table id="modelCoverageTable"></table>
+        <div class="disclosure-line">Observed inputs, calibrated proxies, and data gaps are labeled separately. Facility geolocation and revenue/supply-chain mapping remain future data integrations.</div>
       </div>
     </section>
 
-    <section class="panel" id="allocation-section">
-      <div class="panel-head"><span>Portfolio Allocation Dashboard</span><span>Mock $50 million mandate</span></div>
+    <section class="panel accent-cyan" id="optimizer-section">
+      <div class="panel-head"><span>Portfolio Construction &amp; Risk Budget</span><span id="optimizerTag">Automatic climate universe</span></div>
       <div class="panel-body">
-        <table id="allocationTable"></table>
-      </div>
-    </section>
-
-    <section class="panel" id="optimizer-section">
-      <div class="panel-head"><span>Portfolio Optimizer</span><span id="optimizerTag">ETF + stock / capital-aware</span></div>
-      <div class="panel-body">
-        <div id="optimizerSummary" class="grid four" style="margin-bottom:10px"></div>
+        <div class="institution-controls">
+          <div>
+            <label for="optimizerMode">Instrument set</label>
+            <select id="optimizerMode">
+              <option value="etf_stock">ETF + stock</option>
+              <option value="etf_only">ETF only</option>
+              <option value="stock_only">Stock only</option>
+            </select>
+          </div>
+          <div>
+            <label for="optimizerHorizon">Decision horizon</label>
+            <select id="optimizerHorizon">
+              <option value="long">Long-term</option>
+              <option value="short">Short-term</option>
+            </select>
+          </div>
+          <div>
+            <label for="optimizerStyle">Risk posture</label>
+            <select id="optimizerStyle">
+              <option value="balanced">Balanced</option>
+              <option value="climate_defense">Climate defense</option>
+              <option value="growth">Growth</option>
+              <option value="low_vol">Low volatility</option>
+            </select>
+          </div>
+          <div>
+            <label for="optimizerCapital">Mandate capital</label>
+            <input id="optimizerCapital" value="50000000" inputmode="numeric">
+          </div>
+          <button onclick="runOptimizer()">Rebuild portfolio</button>
+        </div>
+        <details class="advanced-box">
+          <summary>Custom research universe</summary>
+          <div class="grid two" style="margin-top:9px">
+            <div><label for="optimizerEtfs">ETF override</label><textarea id="optimizerEtfs" placeholder="Optional: SPY, QQQ, XLK"></textarea></div>
+            <div><label for="optimizerStocks">Stock override</label><textarea id="optimizerStocks" placeholder="Optional: AAPL, MSFT, NVDA"></textarea></div>
+          </div>
+        </details>
+        <div class="auto-universe-note" id="optimizerUniverseNote">Automatic climate universe is loading.</div>
+        <div id="optimizerDecision" class="decision-grid" style="margin-bottom:10px"></div>
+        <div id="optimizerSummary" class="risk-budget-grid"></div>
+        <div class="section-title">Risk-budget controls</div>
+        <table id="riskBudgetTable" class="budget-checks"></table>
+        <div class="section-title" style="margin-top:14px">Recommended holdings and climate active weights</div>
         <table id="optimizerTable"></table>
       </div>
     </section>
 
-    <section class="panel" id="cvor-section">
-      <div class="panel-head"><span>Conditional Scenario Stress Matrix</span><span>Physical + transition + liability | no occurrence probabilities</span></div>
+    <section class="panel accent-pink" id="cvor-section">
+      <div class="panel-head"><span>Conditional Scenario Tail Matrix</span><span>Physical + transition + liability | no assigned probability</span></div>
       <div class="panel-body">
+        <div id="scenarioSummary" class="risk-budget-grid"></div>
         <table id="scenarioTable"></table>
       </div>
     </section>
 
-    <section class="panel" id="issuer-section">
-      <div class="panel-head"><span>Company-Level Climate VaR Scanner</span><span>Issuer prototype</span></div>
+    <section class="panel accent-cyan" id="issuer-section">
+      <div class="panel-head"><span>Issuer Climate-Risk Deep Dive</span><span>Method 2 valuation + security-level tail readout</span></div>
       <div class="panel-body">
+        <div class="issuer-controls">
+          <div><label for="tickerInput">Issuer universe</label><input id="tickerInput" value="AAPL, MSFT, XOM, NEE, JPM"></div>
+          <button onclick="scanCompanies()">Run issuer analysis</button>
+        </div>
+        <div id="issuerHeatStrip" class="heat-strip" style="margin-bottom:12px"></div>
         <table id="companyTable"></table>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><span>Issuer CVOR Heat Strip</span><span>BAU P95 / 2C reduction</span></div>
-      <div class="panel-body">
-        <div id="issuerHeatStrip" class="heat-strip"></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><span>Issuer Detail Breakdown</span><span>Physical / transition / liability and Method 2 tail risk</span></div>
-      <div class="panel-body">
-        <table id="detailTable"></table>
+        <details class="technical-details">
+          <summary>Technical component detail</summary>
+          <div class="panel-body"><table id="detailTable"></table></div>
+        </details>
+        <div class="disclosure-line">Issuer outputs are valuation and tail-risk research proxies. Dollar losses should be read with the percentage-of-market-cap measure and data-quality label.</div>
       </div>
     </section>
 
   </main>
 </div>
-<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 let DASH = null;
 let MARKET = null;
@@ -4367,13 +4539,13 @@ async function loadDashboard(){
   const res = await fetch("/api/dashboard");
   DASH = await res.json();
   renderDashboard(DASH);
-  await loadClimateModelLab();
-  await scanCompanies();
-  await loadMarketChart();
-  await loadEtfWatchlist();
-  await loadDailyClimateBoard();
-  await loadDailyRecommendationBacktest();
-  await runOptimizer();
+  await Promise.allSettled([
+    runOptimizer(),
+    loadClimateModelLab(),
+    scanCompanies(),
+    loadDailyClimateBoard()
+  ]);
+  renderInvestmentCommittee();
 }
 
 function updateModelControlState(){
@@ -4471,6 +4643,7 @@ function renderClimateModelLab(d){
       <td><b>${r.level}</b></td><td>${r.input}</td><td><span class="lab-status">${r.status}</span></td><td>${r.output}</td>
     </tr>`).join("");
   document.getElementById("modelCalibrationNotice").textContent = `${d.calibration_notice} ${d.methodology.probability_rule} ${d.methodology.tail_rule}`;
+  renderInvestmentCommittee();
 }
 
 async function loadMarketChart(){
@@ -4543,45 +4716,28 @@ function actionPill(action){
 function renderDailyClimateBoard(d){
   if(!d) return;
   const driver = String(d.top_driver || "none").replace("_"," ");
+  const ci = (DASH && DASH.climate_intelligence) || {};
   document.getElementById("dailyClimateTag").textContent = `${d.source_mode} | ${d.market_interval || "1m"} market pulse`;
   document.getElementById("dailyClimateSummary").innerHTML = [
     ["Top driver", driver],
     ["Climate alerts", Number(d.climate_alerts || 0).toLocaleString()],
-    ["Daily pressure", fmtPct(d.daily_pressure || 0)],
-    ["Affected themes", (d.active_themes || []).slice(0,3).join(", ") || "Long-run pressure"]
+    ["Event pressure", fmtPct(d.daily_pressure || 0)],
+    ["Tactical overlay", fmtPct((DASH && DASH.daily_climate_signal && DASH.daily_climate_signal.allocation_pressure) || 0)],
+    ["Physical pressure", fmtPct(ci.physical_score || 0)],
+    ["Transition pressure", fmtPct(ci.transition_score || 0)]
   ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
 
-  const stockTable = document.getElementById("dailyStockTable");
-  stockTable.innerHTML = `<tr><th>Ticker</th><th>Theme</th><th>Relation</th><th>Today</th><th>Action</th><th>Climate Link</th></tr>` +
-    (d.stock_recommendations || []).map(r=>`<tr>
-      <td><b>${r.ticker}</b><br><span class="hint">${r.name}</span></td>
-      <td>${r.theme}<br><span class="hint">${r.stance}</span></td>
-      <td><b>${fmtPct(r.relation_score)}</b></td>
-      <td class="${clsFor(r.today_return)}">${fmtPct(r.today_return)}<br><span class="hint">${fmtPrice(r.last)}</span></td>
-      <td><span class="pill ${actionPill(r.action)}">${r.action}</span></td>
-      <td>${r.climate_link}</td>
-    </tr>`).join("");
-
-  const etfTable = document.getElementById("dailyEtfRecoTable");
-  etfTable.innerHTML = `<tr><th>ETF</th><th>Role</th><th>Relation</th><th>Today</th><th>Action</th><th>Climate Link</th></tr>` +
-    (d.etf_recommendations || []).map(r=>`<tr>
-      <td><b>${r.ticker}</b><br><span class="hint">${r.group}</span></td>
-      <td>${r.role}<br><span class="hint">${r.stance}</span></td>
-      <td><b>${fmtPct(r.relation_score)}</b><br><span class="hint">Risk ${fmtPct(r.climate_risk)}</span></td>
-      <td class="${clsFor(r.today_return)}">${fmtPct(r.today_return)}<br><span class="hint">${fmtPrice(r.last)}</span></td>
-      <td><span class="pill ${actionPill(r.action)}">${r.action}</span></td>
-      <td>${r.climate_link}</td>
-    </tr>`).join("");
-
   const alertTable = document.getElementById("dailyAlertTable");
-  alertTable.innerHTML = `<tr><th>Driver</th><th>Alert Count</th><th>Intensity</th><th>Reminder</th><th>Sample Area</th></tr>` +
-    (d.daily_alerts || []).map(r=>`<tr>
-      <td><b>${r.driver_label}</b></td>
-      <td>${Number(r.count || 0).toLocaleString()}</td>
-      <td>${fmtPct(r.intensity)}</td>
-      <td>${r.reminder}</td>
-      <td>${r.sample_area || "-"}</td>
-    </tr>`).join("");
+  if(alertTable){
+    alertTable.innerHTML = `<tr><th>Driver</th><th>Alerts</th><th>Intensity</th><th>Portfolio implication</th><th>Observed area</th></tr>` +
+      (d.daily_alerts || []).map(r=>`<tr>
+        <td><b>${r.driver_label}</b></td>
+        <td>${Number(r.count || 0).toLocaleString()}</td>
+        <td>${fmtPct(r.intensity)}</td>
+        <td>${r.reminder}</td>
+        <td>${r.sample_area || "-"}</td>
+      </tr>`).join("");
+  }
 }
 
 function renderDailyRecommendationBacktest(d){
@@ -4645,6 +4801,7 @@ function renderDailyRecommendationBacktest(d){
   if(note && d.methodology){
     note.textContent = `${d.methodology.model} ${d.methodology.selection} ${d.methodology.caveat}`;
   }
+  renderInvestmentCommittee();
 }
 
 async function runOptimizer(){
@@ -4670,36 +4827,54 @@ function renderOptimizer(o){
     universeNote.innerHTML = `<b>${o.universe_mode || "Automatic climate universe"}</b><br>${o.universe_note || ""}<br><span class="hint">ETFs: ${(o.auto_etfs || []).slice(0,6).join(", ")}${(o.auto_etfs || []).length>6?", ...":""}<br>Stocks: ${(o.auto_stocks || []).slice(0,6).join(", ")}${(o.auto_stocks || []).length>6?", ...":""}</span>`;
   }
   const summary = document.getElementById("optimizerSummary");
-  const state = o.climate_state || {};
+  const budget = o.risk_budget || {};
+  const view = o.investment_view || {};
+  const decision = document.getElementById("optimizerDecision");
+  if(decision){
+    decision.innerHTML = [
+      ["Portfolio posture", view.posture || "-", view.strategic_action || "-"],
+      ["Tactical control", o.horizon_label || "-", view.tactical_action || "-"],
+      ["Largest risk contributor", budget.largest_risk_contributor || "-", `Weighted holding-tail proxy ${fmtPct(budget.weighted_tail_proxy || 0)}`],
+      ["Largest climate tilt", budget.largest_climate_overweight || "-", `${fmtBps((budget.largest_climate_overweight_delta || 0)*10000)} vs market-only; ${budget.largest_climate_underweight || "-"} ${fmtBps((budget.largest_climate_underweight_delta || 0)*10000)}`]
+    ].map(c=>`<div class="decision-cell"><div class="eyebrow">${c[0]}</div><div class="decision">${c[1]}</div><div class="detail">${c[2]}</div></div>`).join("");
+  }
   summary.innerHTML = [
-    ["Mode", o.mode_label],
-    ["Universe", o.universe_mode || "Automatic"],
-    ["Style", o.style_label],
-    ["Holding", o.horizon_label],
-    ["Acute hazard", fmtPct(state.acute_hazard_state || o.daily_climate_overlay || 0)],
-    ["Chronic climate", fmtPct(state.chronic_climate_state || 0)],
-    ["Macro transition", fmtPct(state.macro_transition_state || 0)],
-    ["Data confidence", fmtPct(state.data_confidence || 0)]
-  ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
+    ["Climate active share", fmtPct(budget.climate_active_share || 0), "Allocation difference vs market-only"],
+    ["Weighted tail proxy", fmtPct(budget.weighted_tail_proxy || 0), fmtMoney(budget.capital_at_tail_proxy || 0)],
+    ["Effective positions", Number(budget.effective_positions || 0).toFixed(1), `HHI ${Number(budget.hhi || 0).toFixed(3)}`],
+    ["Largest position", fmtPct(budget.max_position || 0), `${budget.top_sector || "-"} ${fmtPct(budget.top_sector_weight || 0)}`],
+    ["Physical pressure", fmtPct(budget.weighted_physical_risk || 0), "Weight-averaged issuer exposure"],
+    ["Transition pressure", fmtPct(budget.weighted_transition_risk || 0), `${fmtPct(budget.weighted_confidence || 0)} evidence confidence`]
+  ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div><div class="hint">${c[2]}</div></div>`).join("");
+
+  const riskTable = document.getElementById("riskBudgetTable");
+  if(riskTable){
+    riskTable.innerHTML = `<tr><th>Control</th><th>Portfolio</th><th>Watch level</th><th>Status</th><th>Interpretation</th></tr>` +
+      (budget.checks || []).map(r=>{
+        const isEffective = String(r.name || "").includes("Effective");
+        const displayValue = isEffective ? Number(r.value || 0).toFixed(2) : fmtPct(r.value || 0);
+        const displayLimit = isEffective ? `>= ${Number(r.limit || 0).toFixed(1)}` : `<= ${fmtPct(r.limit || 0)}`;
+        const cls = r.status === "Pass" ? "status-pass" : "status-watch";
+        return `<tr><td><b>${r.name}</b></td><td>${displayValue}</td><td>${displayLimit}</td><td class="${cls}">${r.status}</td><td>${r.interpretation}</td></tr>`;
+      }).join("");
+  }
   const table = document.getElementById("optimizerTable");
-  table.innerHTML = `<tr><th>Ticker</th><th>Type</th><th>Sector</th><th>Weight</th><th>Market-only</th><th>Climate Delta</th><th>Capital</th><th>Last</th><th>Base Alpha</th><th>Climate Alpha</th><th>Risk Penalty</th><th>CVOR</th><th>Confidence</th><th>Action</th><th>Why</th></tr>` +
+  table.innerHTML = `<tr><th>Ticker</th><th>Sector</th><th>Target</th><th>Market-only</th><th>Climate active</th><th>Capital</th><th>Base alpha</th><th>Climate alpha</th><th>Tail proxy</th><th>Confidence</th><th>Action</th><th>Investment rationale</th></tr>` +
     (o.rows || []).map(r=>`<tr>
-      <td><b>${r.ticker}</b></td>
-      <td>${r.asset_type}</td>
+      <td><b>${r.ticker}</b><br><span class="hint">${r.asset_type}</span></td>
       <td>${r.sector}</td>
       <td><b>${fmtPct(r.target_weight)}</b></td>
       <td>${fmtPct(r.market_only_weight || 0)}</td>
       <td class="${clsFor(r.climate_weight_delta || 0)}"><b>${fmtBps((r.climate_weight_delta || 0) * 10000)}</b></td>
       <td>${fmtMoney(r.target_dollars)}</td>
-      <td>${fmtPrice(r.last)}</td>
       <td>${Number(r.base_alpha || 0).toFixed(2)}<br><span class="hint">${fmtPct(r.momentum)} move</span></td>
       <td class="${clsFor(r.climate_alpha || 0)}">${Number(r.climate_alpha || 0).toFixed(2)}<br><span class="hint">P ${fmtPct(r.physical_risk || 0)} / T ${fmtPct(r.transition_risk || 0)}</span></td>
-      <td class="red">${fmtPct(r.risk_penalty || 0)}</td>
-      <td class="amber">${fmtPct(r.cvor_penalty || 0)}<br><span class="hint">proxy ${fmtPct(r.cvor_proxy)}</span></td>
+      <td class="amber">${fmtPct(r.cvor_proxy || 0)}<br><span class="hint">penalty ${fmtPct(r.cvor_penalty || 0)}</span></td>
       <td>${fmtPct(r.data_confidence || 0)}<br><span class="hint">cap ${fmtPct(r.confidence_cap || 0)}</span></td>
       <td><span class="pill ${r.action.includes("Core") || r.action.includes("Add") ? "ok" : (r.action.includes("watch") ? "high" : "info")}">${r.action}</span></td>
-      <td>${r.rationale}<br><span class="hint">${o.methodology ? o.methodology.expected_return : ""} ${o.methodology ? o.methodology.constraint : ""}</span></td>
+      <td>${r.rationale}</td>
     </tr>`).join("");
+  renderInvestmentCommittee();
 }
 
 function setMarketWindow(period, interval, btn){
@@ -4747,28 +4922,20 @@ function renderClientClimateIntelligence(ci){
   const summary = document.getElementById("clientSummary");
   if(!summary) return;
   const riskClass = ci.risk_level === "High" ? "red" : (ci.risk_level === "Elevated" ? "amber" : "green");
-  document.getElementById("clientSummaryTag").textContent = `${ci.risk_level || "Watch"} | pressure + independent tail guardrail | confidence ${fmtPct(ci.confidence || 0)}`;
-  const state = ci.climate_state || {};
-  const stack = ci.methodology_stack || [];
+  document.getElementById("clientSummaryTag").textContent = `${ci.risk_level || "Watch"} | independent pressure and tail controls | ${fmtPct(ci.confidence || 0)} confidence`;
   summary.innerHTML = `
     <div class="client-callout">
-      <div class="title">Client Action</div>
+      <div class="title">Current portfolio risk posture</div>
       <div class="headline ${riskClass}">${ci.risk_level || "Watch"}</div>
       <div>${ci.client_action || "-"}</div>
       ${renderScoreBar(ci.decision_score || ci.total_score || 0)}
       <div class="hint" style="margin-top:8px">${ci.headline || ""}</div>
     </div>
     <div class="grid two">
-      <div class="signal-card"><div class="label">Physical pressure score</div><div class="value ${clsFor((ci.physical_score || 0) - .44)}">${fmtPct(ci.physical_score || 0)}</div>${renderScoreBar(ci.physical_score || 0)}<div class="hint">Scaled severity, not probability</div></div>
-      <div class="signal-card"><div class="label">Transition pressure score</div><div class="value ${clsFor((ci.transition_score || 0) - .44)}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}<div class="hint">Scaled severity, not probability</div></div>
-      <div class="signal-card"><div class="label">Scenario tail loss</div><div class="value amber">${fmtPct(ci.scenario_tail_loss_rate || 0)}</div>${renderScoreBar(ci.scenario_tail_score || 0)}<div class="hint">Mean of two worst conditional stresses</div></div>
-      <div class="signal-card"><div class="label">Data confidence</div><div class="value blue">${fmtPct(ci.confidence || 0)}</div>${renderScoreBar(ci.confidence || 0)}</div>
-    </div>
-    <div class="grid four" style="margin-top:10px">
-      <div class="signal-card"><div class="label">Acute hazard state</div><div class="value">${fmtPct(state.acute_hazard_state || 0)}</div><div class="hint">NWS alert severity and daily pressure</div></div>
-      <div class="signal-card"><div class="label">Chronic climate state</div><div class="value">${fmtPct(state.chronic_climate_state || 0)}</div><div class="hint">NASA temperature + NCEI disasters</div></div>
-      <div class="signal-card"><div class="label">Macro transition state</div><div class="value">${fmtPct(state.macro_transition_state || 0)}</div><div class="hint">NOAA CO2 and policy-pressure proxy</div></div>
-      <div class="signal-card"><div class="label">Model chain</div><div class="value">5 steps</div><div class="hint">${stack.map(s=>s.step).join(" -> ")}</div></div>
+      <div class="signal-card"><div class="label">Physical pressure</div><div class="value ${clsFor(.44-(ci.physical_score || 0))}">${fmtPct(ci.physical_score || 0)}</div>${renderScoreBar(ci.physical_score || 0)}<div class="hint">Severity index, not event probability</div></div>
+      <div class="signal-card"><div class="label">Transition pressure</div><div class="value ${clsFor(.44-(ci.transition_score || 0))}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}<div class="hint">Sector + macro transition state</div></div>
+      <div class="signal-card"><div class="label">Conditional scenario tail</div><div class="value amber">${fmtPct(ci.scenario_tail_loss_rate || 0)}</div>${renderScoreBar(ci.scenario_tail_score || 0)}<div class="hint">Mean of two worst scenario losses</div></div>
+      <div class="signal-card"><div class="label">Evidence confidence</div><div class="value blue">${fmtPct(ci.confidence || 0)}</div>${renderScoreBar(ci.confidence || 0)}<div class="hint">Observed inputs plus proxy coverage</div></div>
     </div>`;
   const affected = document.getElementById("clientAffectedTable");
   if(affected){
@@ -4795,11 +4962,31 @@ function renderClientClimateIntelligence(ci){
         <td>${r.client_use}</td>
       </tr>`).join("");
   }
+  renderInvestmentCommittee();
+}
+
+function renderInvestmentCommittee(){
+  const el = document.getElementById("investmentCommitteeStrip");
+  if(!el || !DASH) return;
+  const ci = DASH.climate_intelligence || {};
+  const view = (OPTIMIZER && OPTIMIZER.investment_view) || {};
+  const budget = (OPTIMIZER && OPTIMIZER.risk_budget) || {};
+  const shortTerm = (CLIMATE_MODEL_LAB && CLIMATE_MODEL_LAB.short_term) || {};
+  const threeMonth = DAILY_RECO_BACKTEST && DAILY_RECO_BACKTEST.windows ? DAILY_RECO_BACKTEST.windows["3m"] : null;
+  const validation = threeMonth && threeMonth.summary
+    ? `${fmtPct(threeMonth.summary.recommended_total_return || 0)} signal vs ${fmtPct(threeMonth.summary.benchmark_total_return || 0)} universe`
+    : "Walk-forward evidence loading";
+  el.innerHTML = [
+    ["Strategic posture", view.posture || ci.risk_level || "Watch", view.strategic_action || ci.client_action || "-"],
+    ["Tactical decision", shortTerm.action || "Event overlay active", shortTerm.tactical_overlay_bps!==undefined ? `${fmtBps(shortTerm.tactical_overlay_bps)} from ${String(shortTerm.top_driver || "climate").replace("_"," ")}` : (view.tactical_action || "-")],
+    ["Largest portfolio risk", budget.largest_risk_contributor || "-", `${view.largest_risk || ""} Weighted tail proxy ${fmtPct(budget.weighted_tail_proxy || 0)}.`],
+    ["Validation evidence", validation, `${fmtPct(ci.confidence || 0)} model confidence; short windows are directional, not statistically conclusive.`]
+  ].map(c=>`<div class="decision-cell"><div class="eyebrow">${c[0]}</div><div class="decision">${c[1]}</div><div class="detail">${c[2]}</div></div>`).join("");
 }
 
 function renderDashboard(d){
   document.getElementById("timeBadge").textContent = "Updated " + d.generated_at;
-  document.getElementById("sourceBadge").textContent = "Market: " + d.market_source;
+  document.getElementById("sourceBadge").textContent = "Market + official climate inputs";
   document.getElementById("regimeBadge").textContent = d.latest_regime.regime + " | signal " + d.latest_regime.signal_year;
   document.getElementById("kpiRegime").textContent = d.latest_regime.regime.replace(" Climate Risk","");
   document.getElementById("kpiRegime").className = "kpi-value " + (d.latest_regime.regime.includes("High") ? "red" : "green");
@@ -4815,10 +5002,10 @@ function renderDashboard(d){
   document.getElementById("kpiCvor").textContent = fmtPct(d.cvor_summary.scenario_tail_loss_rate || d.cvor_summary.cvor_95_loss_rate);
   document.getElementById("kpiCvor").className = "kpi-value amber";
   renderClientClimateIntelligence(d.climate_intelligence || {});
-  renderAllocation(d.latest_allocation);
-  renderScenarios(d.scenario_rows);
+  renderScenarios(d.scenario_rows, d.cvor_summary || {});
   renderClimateData(d);
   renderDailyClimateSignal(d);
+  renderInvestmentCommittee();
 }
 
 function renderClimateData(d){
@@ -4837,29 +5024,26 @@ function renderClimateData(d){
     </div>`).join("");
   }
   const table = document.getElementById("climateDataTable");
-  const summary = [
-    ["Climate data year", c.latest_year],
-    ["Current warming input", `${Number(c.current_warming).toFixed(3)} C`],
-    ["CO2 input", `${Number(c.co2_ppm).toFixed(2)} ppm`],
-    ["10Y CO2 change", `${Number(c.co2_10y_change).toFixed(2)} ppm`],
-    ["10Y disaster frequency", `${Number(c.disaster_10y_avg).toFixed(2)} / year`],
-    ["Pressure multiplier", Number(c.climate_pressure_multiplier).toFixed(3)],
-    ["Acute physical score", fmtPct(ci.acute_physical_score || 0)],
-    ["Chronic physical score", fmtPct(ci.chronic_physical_score || 0)],
-    ["Transition score", fmtPct(ci.transition_score || 0)],
-    ["Source mode", c.source_mode],
-    ["Source notes", notes],
+  const daily = d.daily_climate_signal || {};
+  const inputs = [
+    ["NWS active alerts", Number(daily.climate_alerts || 0).toLocaleString(), "Acute event intensity and tactical sector overlay", daily.source_mode || "Live input"],
+    ["NASA GISTEMP", `${Number(c.current_warming).toFixed(3)} C`, "Chronic warming state and physical-risk calibration", `Official vintage ${c.latest_year}`],
+    ["NOAA GML CO2", `${Number(c.co2_ppm).toFixed(2)} ppm`, "Macro transition-pressure proxy", `10Y change ${Number(c.co2_10y_change).toFixed(2)} ppm`],
+    ["NCEI disasters", `${Number(c.disaster_10y_avg).toFixed(2)} / year`, "Historical acute-loss frequency calibration", `Official vintage ${c.latest_year}`],
+    ["Derived climate pressure", Number(c.climate_pressure_multiplier).toFixed(3), "Scales issuer Method 2 and portfolio climate state", c.source_mode || "Derived"],
   ];
-  table.innerHTML = `<tr><th>Input</th><th>Value</th><th>Recent Official Data</th></tr>` +
-    summary.map((r,idx)=>`<tr>
-      <td><b>${r[0]}</b></td><td>${r[1]}</td>
-      <td>${idx===0 ? latestRows.map(x=>`${x.year}: temp ${Number(x.temperature_anomaly).toFixed(2)}C (${x.temperature_source}), CO2 ${Number(x.co2_ppm).toFixed(1)}ppm (${x.co2_source}), disasters ${x.billion_dollar_disasters ?? "-"} (${x.disaster_source})`).join("<br>") : ""}</td>
-    </tr>`).join("") +
-    `<tr><td><b>Official URLs</b></td><td colspan="2">
-      <span class="pill info">NASA GISTEMP</span> ${sources.nasa_gistemp || ""}<br>
-      <span class="pill info">NOAA CO2</span> ${sources.noaa_co2 || ""}<br>
-      <span class="pill info">NCEI Disasters</span> ${sources.ncei_disasters || ""}
-    </td></tr>`;
+  table.innerHTML = `<tr><th>Input</th><th>Latest</th><th>Decision role</th><th>Lineage</th></tr>` +
+    inputs.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
+
+  const coverageTable = document.getElementById("modelCoverageTable");
+  if(coverageTable){
+    coverageTable.innerHTML = `<tr><th>Model layer</th><th>Coverage</th><th>Status</th><th>Decision use</th></tr>` +
+      (ci.model_coverage || []).map(r=>{
+        const status = String(r.status || "");
+        const cls = status === "Operational" ? "status-pass" : (status === "Data gap" ? "status-watch" : "status-proxy");
+        return `<tr><td><b>${r.layer}</b></td><td>${r.coverage}</td><td class="${cls}">${status}</td><td>${r.decision_use}</td></tr>`;
+      }).join("");
+  }
 }
 
 function renderDailyClimateSignal(d){
@@ -4868,14 +5052,16 @@ function renderDailyClimateSignal(d){
   const cards = document.getElementById("dailyClimateCards");
   const top = s.top_driver || "none";
   const source = s.source_mode || "-";
-  cards.innerHTML = [
-    ["Climate alerts", Number(s.climate_alerts || 0).toLocaleString()],
-    ["Daily pressure", fmtPct(s.daily_pressure || 0)],
-    ["Allocation overlay", fmtPct(s.allocation_pressure || 0)],
-    ["Top driver", top.replace("_"," ")],
-    ["Physical risk", fmtPct(ci.physical_score || 0)],
-    ["Transition risk", fmtPct(ci.transition_score || 0)]
-  ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
+  if(cards){
+    cards.innerHTML = [
+      ["Climate alerts", Number(s.climate_alerts || 0).toLocaleString()],
+      ["Daily pressure", fmtPct(s.daily_pressure || 0)],
+      ["Allocation overlay", fmtPct(s.allocation_pressure || 0)],
+      ["Top driver", top.replace("_"," ")],
+      ["Physical risk", fmtPct(ci.physical_score || 0)],
+      ["Transition risk", fmtPct(ci.transition_score || 0)]
+    ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
+  }
   const rows = d.latest_allocation || [];
   const table = document.getElementById("dailyImpactTable");
   table.innerHTML = `<tr><th>ETF</th><th>Long-Term Weight</th><th>Daily Overlay</th><th>Final Weight</th><th>Daily Stress</th><th>Driver</th><th>Source</th></tr>` +
@@ -4906,7 +5092,21 @@ function renderAllocation(rows){
     </tr>`).join("");
 }
 
-function renderScenarios(rows){
+function renderScenarios(rows, summary={}){
+  const summaryEl = document.getElementById("scenarioSummary");
+  if(summaryEl){
+    const sorted = [...(rows || [])].sort((a,b)=>Number(b.portfolio_loss_rate||0)-Number(a.portfolio_loss_rate||0));
+    const worst = sorted[0] || {};
+    const best = sorted[sorted.length-1] || {};
+    summaryEl.innerHTML = [
+      ["Scenario tail", fmtPct(summary.scenario_tail_loss_rate || summary.cvor_95_loss_rate || 0), "Mean of two worst conditional losses"],
+      ["Worst scenario", worst.scenario || "-", fmtPct(worst.portfolio_loss_rate || 0)],
+      ["Lowest modeled loss", best.scenario || "-", fmtPct(best.portfolio_loss_rate || 0)],
+      ["Tail capital", fmtMoney(summary.scenario_tail_loss_dollars || summary.cvor_95_loss_dollars || 0), "Current model mandate"],
+      ["Occurrence probability", "Not assigned", "Scenario severity only"],
+      ["Tail definition", "Worst two mean", "Not regulatory Expected Shortfall"]
+    ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div><div class="hint">${c[2]}</div></div>`).join("");
+  }
   const table = document.getElementById("scenarioTable");
   table.innerHTML = `<tr><th>Scenario</th><th>Interpretation</th><th>Carbon Price</th><th>Portfolio Loss</th><th>Loss Dollars</th><th>Largest Sector Loss</th><th>Narrative</th></tr>` +
     rows.map(r=>{
@@ -5647,10 +5847,8 @@ function drawLineChart(id, labels, series){
   if(labels.length){ ctx.fillText(labels[0],pad.l,h-10); ctx.fillText(labels[labels.length-1],w-pad.r-36,h-10); }
 }
 
-window.addEventListener("resize",()=>{ if(DASH) renderDashboard(DASH); if(MARKET) drawCandleChart(); if(OPTIMIZER) renderOptimizer(OPTIMIZER); if(DAILY_CLIMATE_BOARD) renderDailyClimateBoard(DAILY_CLIMATE_BOARD); });
+window.addEventListener("resize",()=>{ if(DASH) renderDashboard(DASH); if(OPTIMIZER) renderOptimizer(OPTIMIZER); if(DAILY_CLIMATE_BOARD) renderDailyClimateBoard(DAILY_CLIMATE_BOARD); });
 loadDashboard();
-setInterval(()=>{ loadMarketChart(); }, 20000);
-setInterval(()=>{ loadEtfWatchlist(); }, 60000);
 setInterval(()=>{ loadDailyClimateBoard(); }, 300000);
 setInterval(()=>{ loadDailyRecommendationBacktest(); }, 3600000);
 setInterval(()=>{ loadDashboard(); }, 900000);
@@ -5768,7 +5966,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://127.0.0.1:{PORT}"
-    print(f"Jenneson Climate-Finance Platform started: {url}")
+    print(f"Jennison Climate-Finance Platform started: {url}")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
