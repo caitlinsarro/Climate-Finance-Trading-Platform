@@ -70,8 +70,7 @@ class ClimateMethodologyTests(unittest.TestCase):
         )
         channel_sum = sum(
             components[key]
-            for key in app.TRANSITION_DCF_COMPONENTS
-            if key != "macro_transition"
+            for key in ("sector_demand", "carbon_cost", "energy_cost", "transition_capex", "pass_through_offset")
         )
         self.assertAlmostEqual(channel_sum, components["micro_transition"], places=12)
         self.assertGreater(components["carbon_cost"], 0.0)
@@ -85,6 +84,30 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertGreater(energy["demand_shift"], 0.0)
         self.assertLess(technology["demand_shift"], 0.0)
         self.assertIn("issuer NGFS/EIA/EPA/SEC data not loaded", energy["status"])
+
+    def test_three_layer_revenue_transmission_is_separate_and_traceable(self):
+        scenario = app.CLIMATE_SCENARIO_PATHS["delayed_transition"]
+        industrial = app.scenario_terminal_components(
+            scenario,
+            "Industrials",
+            app.issuer_vulnerability_profile("SECTOR", "Industrials"),
+            2050,
+        )
+        utility = app.scenario_terminal_components(
+            scenario,
+            "Utilities",
+            app.issuer_vulnerability_profile("SECTOR", "Utilities"),
+            2050,
+        )
+        self.assertGreater(industrial["country_gdp"], utility["country_gdp"])
+        self.assertGreater(industrial["supply_chain"], utility["supply_chain"])
+        self.assertIn("gdp_beta", industrial["macro_channel_inputs"])
+        self.assertIn("revenue geography", industrial["macro_channel_inputs"]["status"])
+
+    def test_sector_demand_is_counted_once_in_dcf_components(self):
+        self.assertIn("sector_demand", app.DCF_COMPONENTS)
+        self.assertNotIn("demand_shift", app.DCF_COMPONENTS)
+        self.assertNotIn("macro_transition", app.DCF_COMPONENTS)
 
     def test_value_attribution_reconciles_to_total(self):
         result = app.scenario_repricing_for_scope(
@@ -149,6 +172,13 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertIn("No occurrence probabilities", summary["scenario_probability_method"])
         self.assertNotIn("cvor_95", summary)
         self.assertEqual(summary["tail_count"], app.SCENARIO_TAIL_COUNT)
+        self.assertIn("physical_model_risk_loss_floor", summary)
+        self.assertIn("physical_model_risk_loss_ceiling", summary)
+        self.assertGreaterEqual(
+            summary["physical_model_risk_loss_ceiling"],
+            summary["physical_model_risk_loss_floor"],
+        )
+        self.assertTrue(all("physical_model_risk_high_loss_rate" in row for row in rows))
 
     def test_daily_overlay_is_zero_sum_hazard_specific_and_capped(self):
         base_rows = [
@@ -179,6 +209,18 @@ class ClimateMethodologyTests(unittest.TestCase):
             {"daily_pressure": 0.80, "allocation_pressure": 0.90, "top_driver": "fallback", "category_intensity": {}},
         )
         self.assertTrue(all(row["daily_adjustment_bps"] == 0 for row in adjusted))
+
+    def test_physical_event_loss_uses_hazard_exposure_vulnerability_resilience(self):
+        loss = app.physical_event_loss(0.80, 0.75, 1.20, 0.40)
+        self.assertAlmostEqual(loss, 0.80 * 0.75 * 1.20 * 0.60, places=12)
+        self.assertLess(app.physical_event_loss(0.80, 0.75, 1.20, 0.80), loss)
+
+    def test_missing_facility_data_is_labeled_as_sector_fallback(self):
+        with patch.object(app, "load_facility_exposure_data", return_value={}):
+            profile = app.issuer_hazard_exposure_profile("UNKNOWN", "Industrials")
+        self.assertEqual(profile["observed_hazards"], 0)
+        self.assertIn("facility geolocation not loaded", profile["data_quality"])
+        self.assertEqual(set(profile["hazards"]), set(app.HAZARD_CATEGORIES))
 
     def test_climate_board_contains_observed_alerts_not_duplicate_picks(self):
         signal = {
@@ -265,10 +307,43 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertAlmostEqual(sum(weights), 1.0, places=3)
         self.assertAlmostEqual(budget["hhi"], expected_hhi, places=3)
         self.assertAlmostEqual(budget["effective_positions"], 1 / expected_hhi, places=1)
-        self.assertEqual(len(budget["checks"]), 5)
+        self.assertGreaterEqual(len(budget["checks"]), 12)
         self.assertEqual(budget["effective_cap_breaches"], 0)
+        self.assertIn("worst_portfolio_scenario_loss", budget)
+        self.assertTrue(budget["portfolio_scenario_losses"])
         self.assertTrue(all("cvor_proxy" not in row for row in result["rows"]))
         self.assertTrue(all("scenario_tail_proxy" in row for row in result["rows"]))
+        self.assertTrue(all("climate_alpha" not in row for row in result["rows"]))
+        self.assertTrue(all("climate_risk_indicator" in row for row in result["rows"]))
+        self.assertIn("max mu'w", result["methodology"]["formula"])
+
+    def test_valuation_uses_capm_wacc_and_sector_capital_structure(self):
+        energy = app.valuation_assumptions("XOM", "Energy", observed_beta=1.10)
+        utility = app.valuation_assumptions("XLU", "Utilities", observed_beta=0.60)
+        self.assertNotEqual(energy["wacc"], utility["wacc"])
+        self.assertNotEqual(energy["terminal_growth"], utility["terminal_growth"])
+        self.assertIn("risk-free + beta x ERP", energy["formula"])
+
+    def test_broad_market_etf_uses_economy_composite_not_technology(self):
+        sector, _, _ = app.etf_climate_profile("SPY")
+        self.assertEqual(app.normalize_model_sector(sector), "Economy")
+        transition = app.structural_transition_pressure("Economy")
+        self.assertIn("Value-added-weighted economy", transition["status"])
+        vulnerability = app.issuer_vulnerability_profile("SPY", "Economy")
+        self.assertEqual(vulnerability["quality"], "Economy-weighted sector fallback")
+
+    def test_short_term_overlay_is_zero_sum_around_strategic_weights(self):
+        rows = [
+            {"ticker": "A", "asset_type": "ETF", "tactical_market_score": 0.8, "tactical_event_risk": 0.1},
+            {"ticker": "B", "asset_type": "ETF", "tactical_market_score": 0.5, "tactical_event_risk": 0.4},
+            {"ticker": "C", "asset_type": "ETF", "tactical_market_score": 0.3, "tactical_event_risk": 0.7},
+        ]
+        strategic = {"A": 0.34, "B": 0.33, "C": 0.33}
+        caps = {"A": 0.50, "B": 0.50, "C": 0.50}
+        final, overlays = app.apply_zero_sum_tactical_overlay(rows, strategic, caps, {"ETF": 1.0, "Stock": 0.0})
+        self.assertAlmostEqual(sum(final.values()), 1.0, places=12)
+        self.assertAlmostEqual(sum(overlays.values()), 0.0, places=12)
+        self.assertLessEqual(max(abs(value) for value in overlays.values()), app.TACTICAL_OVERLAY_LIMIT_BPS / 10_000 + 1e-12)
 
     def test_walk_forward_backtest_reports_net_cost_and_turnover(self):
         dates = [f"2026-{1 + index // 28:02d}-{1 + index % 28:02d}" for index in range(50)]
@@ -293,6 +368,8 @@ class ClimateMethodologyTests(unittest.TestCase):
         self.assertLess(rows[0]["recommended_return"], rows[0]["gross_recommended_return"])
         self.assertEqual(rows[0]["benchmark_exposure"], 0.75)
         self.assertEqual(rows[0]["cash_weight"], 0.25)
+        self.assertIn("market_only_return", rows[0])
+        self.assertIn("incremental_climate_return", rows[0])
         self.assertAlmostEqual(
             rows[0]["benchmark_return"],
             0.75 * rows[0]["unscaled_benchmark_return"],
@@ -304,6 +381,8 @@ class ClimateMethodologyTests(unittest.TestCase):
             window["summary"]["recommended_total_return"],
         )
         self.assertIn("information_ratio", window["summary"])
+        self.assertIn("incremental_climate_value", window["summary"])
+        self.assertIn("bootstrap_95_ci", window["summary"])
 
 
 if __name__ == "__main__":

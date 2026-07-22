@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Issuer Facility Climate Exposure",
+  "type": "object",
+  "required": ["issuers"],
+  "properties": {
+    "issuers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["source", "hazards"],
+        "properties": {
+          "source": {"type": "string"},
+          "as_of": {"type": "string", "format": "date"},
+          "hazards": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["exposure", "vulnerability", "resilience"],
+              "properties": {
+                "exposure": {"type": "number", "minimum": 0, "maximum": 1.5},
+                "vulnerability": {"type": "number", "minimum": 0, "maximum": 1.5},
+                "resilience": {"type": "number", "minimum": 0, "maximum": 0.95}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -37,12 +37,13 @@ Historical market features are point-in-time. Annual climate features use expand
 
 The platform now separates strategic climate valuation from tactical event risk:
 
-- `Long-term`: choose a target and reference scenario. Country-level acute, chronic, and macro transition shocks are downscaled to sectors, then to issuers using transparent fixed-asset, labor-intensity, and earnings-sensitivity proxies. Climate-adjusted cash flows are discounted into an as-of-date value impact. Nonlinear DCF attribution uses exact Shapley values across the physical and transition cash-flow channels.
+- `Long-term`: choose a target and reference scenario. Country GDP and supply shocks pass through sector GDP/input-output betas and issuer earnings sensitivity. Acute and chronic physical losses are downscaled separately. Climate-adjusted FCFF is discounted with issuer/sector-specific WACC and terminal growth. Nonlinear attribution uses exact Shapley values across all disclosed cash-flow channels.
 - `Transition cash flow`: atmospheric CO2 concentration is climate-state context, not a policy-risk input. Business-model transition risk is decomposed as `carbon cost + demand shift + energy cost + transition CapEx - pass-through`, with each channel shown separately in the valuation attribution.
-- `Short-term`: NWS event pressure is multiplied by the observed hazard mix and hazard-specific sector beta. The portfolio tilt is centered to be zero-sum around strategic weights and scaled so no holding moves more than 250 basis points in one daily overlay. No hazard mix means no tactical trade.
+- `Short-term`: each NWS hazard severity nowcast is multiplied by location exposure, hazard vulnerability, and one minus resilience. NWS alerts are not interpreted as disaster probabilities. The portfolio tilt is centered to be zero-sum around strategic weights and no holding moves more than 250 basis points. No hazard mix means no tactical trade.
 - `Scope`: the same chain can be read at country, sector, issuer, or current-portfolio level.
 - `Scenario rule`: NGFS-style scenarios are conditional stresses, not forecasts. The model does not assign occurrence probabilities to them.
 - `Tail rule`: the mean of the two largest portfolio scenario losses is labeled a scenario-tail proxy, not regulatory Expected Shortfall. It is kept separate from physical and transition pressure to avoid double counting.
+- `Model risk`: physical damage coefficients are rerun at `0.70x` and `1.30x`. The resulting range is a transparent sensitivity band, not a statistical confidence interval.
 
 The scenario paths, sector medians, and issuer vulnerability ratios in this prototype are documented, replaceable calibrations. They are not Bloomberg data. The former stand-alone issuer Monte Carlo module was removed because its distributional assumptions were not calibrated strongly enough to support precise P95/P99 claims. Issuer scope now uses the same auditable target-reference scenario engine as every other scope. A production implementation should replace issuer proxies with geolocated facilities, revenue segmentation, supply-chain links, and licensed NGFS or vendor scenario data.
 
@@ -55,18 +56,22 @@ The optimizer is designed for an asset-investor workflow:
 - `ETF only`: builds diversified exposure from ETFs only
 - `ETF + stock`: uses ETFs as the core sleeve and single stocks as satellite positions
 - `Stock only`: allocates only across selected U.S.-listed companies
-- `Short-term`: uses today's 1-minute intraday bars, momentum, volatility, liquidity, and the current climate alert overlay
-- `Long-term`: uses recent daily trend, structural climate resilience, and target-versus-reference scenario loss
-- `Balanced`: mixes market trend, climate score, and volatility control
+- `Short-term`: starts from the strategic portfolio and applies a separate 1-20 trading-day market/event overlay
+- `Long-term`: uses a one-year daily market history, structural physical/transition risk, and 5-30 year target-versus-reference cash-flow losses; current NWS alerts do not change strategic weights
+- `Balanced`: balances expected return, covariance risk, scenario losses, tracking error, turnover, and explicit climate-risk budgets
 - `Climate defense`: gives more weight to lower conditional climate loss and resilient sectors
 - `Growth`: gives more weight to market momentum and single-name upside
 - `Low volatility`: reduces high-volatility and high-tail-risk exposure
 
 By default, the optimizer uses an automatic climate universe. It ranks climate-related ETFs and stocks from the daily climate relation signal, broad-market anchors, and sector physical/transition risk profiles. Advanced users can still override the ETF and stock candidate lists manually.
 
-For each asset, the optimizer separates base alpha, climate alpha, volatility/confidence control, and conditional scenario-tail loss. Within each ETF or stock sleeve, it solves a bounded proportional allocation equivalent to maximizing `sum(priority_i * log(weight_i))` subject to the sleeve budget and effective confidence caps. The market-only ablation uses the same sleeves and caps, so climate active weight is directly comparable. Capital only converts the reconciled weight into target dollars and estimated shares.
+For each asset, the optimizer separates a market-derived expected-return signal from climate-risk indicators. Climate information is not assumed to be alpha. The strategic optimizer solves the disclosed robust objective
 
-The climate buy/sell backtest is a conditional walk-forward replay over the current optimizer-selected universe. Each historical signal date uses only information available before the next trading day, forms a climate-resilient buy book and a climate-vulnerable sell/underweight book, and compares the resulting overlay with an exposure-matched benchmark over 3-week, 3-month, and 3-year windows. Capital affects dollar sizing, while return evidence remains capital-independent.
+`max mu'w - lambda w'Sigma w - kappa max_s L_s(w) - eta (w-w_market)'Sigma(w-w_market) - tau ||w-w_market||_1`
+
+subject to sleeve budgets, single-name and sector caps, liquidity/confidence limits, tracking error, maximum scenario loss, physical-risk, transition-risk, and carbon-cost budgets. At every projected-gradient iteration the solver identifies the current portfolio's worst conditional scenario and uses that scenario's loss vector as the subgradient. The final L1 term is active share versus the market-only reference, not realized turnover versus an uploaded prior portfolio. Capital only converts weights into target dollars and estimated shares.
+
+The climate buy/sell backtest is a one-step walk-forward replay over the selected optimizer universe. Each historical signal date uses information available before the next trading day, forms climate-on and market-only buy/sell books with equal exposure and costs, and reports `IncrementalClimateValue = Performance_FullModel - Performance_MarketOnly`. It adds block-bootstrap intervals and a sign-permutation test. The current prototype still lacks a complete archived NWS tape, historical index constituents, delisted securities, and ALFRED macro vintages; these limitations are stated in the interface rather than hidden.
 
 ## Climate Data Sources
 
@@ -74,7 +79,10 @@ The climate buy/sell backtest is a conditional walk-forward replay over the curr
 - NOAA Global Monitoring Laboratory Mauna Loa monthly CO2 CSV
 - NOAA National Centers for Environmental Information billion-dollar weather and climate disaster event JSON
 - NWS active weather alerts for acute daily physical climate pressure
-- FEMA National Risk Index, NASA FIRMS, AirNow, NOAA CPC/NWPS, EPA GHGRP, EPA eGRID, EIA Open Data, NGFS scenarios, and SEC EDGAR APIs as source-ready expansion points for richer physical and transition risk mapping
+- BEA GDP by Industry and Input-Output Accounts for country-to-sector and supply-chain transmission
+- FRED/ALFRED for macroeconomic series and historical data vintages
+- NOAA Storm Events for event calibration and NASA NEX-GDDP-CMIP6 for downscaled future hazard paths
+- FEMA National Risk Index, NASA FIRMS, AirNow, NOAA CPC/NWPS, EPA GHGRP/eGRID, EIA Open Data, NGFS scenarios, and SEC EDGAR APIs as source-ready expansion points
 
 The app caches official climate data locally under `data/official_climate_data_cache.json` and falls back to built-in proxy values if an external source is unavailable.
 

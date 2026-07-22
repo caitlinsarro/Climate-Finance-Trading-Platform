@@ -13,5 +13,11 @@ server.err
 
 data/*.json
 
+tmp/
+*.aux
+*.log
+*.out
+*.toc
+
 .DS_Store
 Thumbs.db
