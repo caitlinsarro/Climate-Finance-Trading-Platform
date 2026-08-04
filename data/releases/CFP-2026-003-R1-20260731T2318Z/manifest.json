@@ -1,0 +1,25 @@
+{
+  "created_at": "2026-07-31T23:18:32+00:00",
+  "credential_values_stored": false,
+  "feature_id": "CFP-2026-003",
+  "release_id": "CFP-2026-003-R1-20260731T2318Z",
+  "source_entries": [
+    {
+      "allowed_use": "dated risk-free-rate input and valuation sensitivity",
+      "content_type": "text/xml; charset=UTF-8",
+      "latest_observation_date": "2026-07-31",
+      "limitation": "Treasury yields do not provide equity risk premium, issuer beta, debt cost, tax, or terminal growth.",
+      "processed_path": "data/releases/CFP-2026-003-R1-20260731T2318Z/processed/treasury_yield_curve_2026.csv",
+      "raw_bytes": 226243,
+      "raw_path": "data/releases/CFP-2026-003-R1-20260731T2318Z/raw/treasury/daily_yield_curve_2026.xml",
+      "raw_sha256": "56a95cef3047f94610fa7b38264a1ab0991dc08866e0663d4ebbffd546cea21a",
+      "record_count": 146,
+      "retrieved_at": "2026-07-31T23:18:32+00:00",
+      "source_class": "official government",
+      "source_id": "SRC-US-TREASURY",
+      "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=2026",
+      "source_vintage": "2026"
+    }
+  ],
+  "updated_at": "2026-07-31T23:18:40+00:00"
+}

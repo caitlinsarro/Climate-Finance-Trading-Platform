@@ -1,3 +1,5 @@
 numpy
 pandas
 yfinance
+openpyxl
+pyxlsb>=1.0.10

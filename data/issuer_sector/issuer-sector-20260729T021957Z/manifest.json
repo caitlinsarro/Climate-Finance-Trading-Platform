@@ -1,0 +1,32 @@
+{
+  "release_id": "issuer-sector-20260729T021957Z",
+  "retrieved_at": "2026-07-29T02:19:57.563194+00:00",
+  "coverage_claim": "US exchange-listed equities present in the Nasdaq stock screener; not complete global coverage",
+  "classification_status": "reference metadata; not issuer-verified",
+  "sources": {
+    "sec": {
+      "url": "https://www.sec.gov/files/company_tickers_exchange.json",
+      "sha256": "4ee71d696e0219644700efd31c23013d6acf30de2ed64c001c01081a2de32c86",
+      "bytes": 521868
+    },
+    "nasdaq": {
+      "url": "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=20&offset=0&download=true",
+      "sha256": "8b5ecfb2e8a4372410d2168bf7025f8f49dd77c5e711adf1ef679cac9dd9281f",
+      "bytes": 2231379
+    }
+  },
+  "output": {
+    "path": "data/issuer_sector_master.csv",
+    "sha256": "73e6152bb14c792fa4a334ac4099c62df3087adc927633b899550a84132a1042",
+    "bytes": 2532480
+  },
+  "counts": {
+    "sec_rows": 10411,
+    "nasdaq_rows": 7130,
+    "master_rows": 7130,
+    "eligible_equity_reference": 5730,
+    "sec_matched": 6722,
+    "rejected_non_common_security": 1078,
+    "rejected_missing_or_unsupported_sector": 322
+  }
+}

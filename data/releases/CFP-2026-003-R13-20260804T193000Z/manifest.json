@@ -1,0 +1,149 @@
+{
+  "created_at": "2026-08-04T19:16:53+00:00",
+  "credential_values_stored": false,
+  "eight_issuer_public_evidence": {
+    "allowed_use": "long-horizon public-data issuer comparison and data-gap review; not Climate VaR or investment recommendation",
+    "demo_release_id": "CFP-2026-003-R11-20260801T023000Z",
+    "evidence_release_id": "CFP-2026-003-R10-20260801T015000Z",
+    "macro_supply_status": "financial context loaded; scenario loss not calculable",
+    "ngfs_release_id": "CFP-2026-003-R5-20260731T2351Z",
+    "physical_status": "exposure screens only; financial loss not calculable",
+    "processed_paths": [
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_reported_scope1.csv",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_transition_sensitivity_2050.csv",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_epa_facilities_2023.csv",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_fema_context_2025.csv",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_physical_exposure_summary.csv",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_financial_transmission_evidence.csv"
+    ],
+    "processed_sha256": {
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_epa_facilities_2023.csv": "b26a82326a18b1f61b47fbbad4ca427d2f5d1d30f43ed6c166f5d80f35f1fdb2",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_fema_context_2025.csv": "2a0b5aa4169a6180e6da45897463faa5dbfee4a29b598316bda1fdb7715efa19",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_financial_transmission_evidence.csv": "85b047173137ad8f73146655e389d851e9d42993464ee7600bc86e53cd067de4",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_physical_exposure_summary.csv": "ff531f4afc45efcade93d3ab0e787d12934d6fb5b4d2b53aadcbe3bdda313581",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_reported_scope1.csv": "379d2335d4f90ffe097d1ec720c7a9efeb2a9ba3663d5e4cade3a642dfc4bbd9",
+      "data/releases/CFP-2026-003-R13-20260804T193000Z/processed/eight_issuer_transition_sensitivity_2050.csv": "b475cc15bbffe8ca50b4e4c7bb12b20c9f8f1f964f339a3a86c77433b802acef"
+    },
+    "record_count": 8,
+    "tickers": [
+      "AAPL",
+      "CAT",
+      "CVX",
+      "DE",
+      "DUK",
+      "MSFT",
+      "NEE",
+      "XOM"
+    ],
+    "transition_status": "gross Scope 1 carbon-price sensitivity calculated for eight issuers"
+  },
+  "feature_id": "CFP-2026-003",
+  "release_id": "CFP-2026-003-R13-20260804T193000Z",
+  "source_entries": [
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": "data/releases/CFP-2026-003-R13-20260804T193000Z/raw/issuer_reports/apple.pdf",
+      "raw_sha256": "597676e8b48ac45529303abc7ef47425ca62ff4efc3a375962a077a033525f74",
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-AAPL-SCOPE1-2024",
+      "source_location": "Independent assurance table, FY2024 Scope 1",
+      "source_title": "Apple 2025 Environmental Progress Report",
+      "source_url": "https://www.apple.com/environment/pdf/Apple_Environmental_Progress_Report_2025.pdf",
+      "source_vintage": "2024"
+    },
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": "data/releases/CFP-2026-003-R13-20260804T193000Z/raw/issuer_reports/cat-data.pdf",
+      "raw_sha256": "2389b874742b4a3b274292f5caa60152648ff99e1140513d4fdee88fd3ddb52e",
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-CAT-SCOPE1-2024",
+      "source_location": "Operations GHG performance table, 2024 Scope 1",
+      "source_title": "Caterpillar sustainability data 2025",
+      "source_url": "https://s7d2.scene7.com/is/content/Caterpillar/CM20260508-cac43-ec231",
+      "source_vintage": "2024"
+    },
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": null,
+      "raw_sha256": null,
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-CVX-SCOPE1-2024",
+      "source_location": "2024 GHG emissions metrics, Scope 1",
+      "source_title": "Chevron Sustainability Highlights 2024",
+      "source_url": "https://www.chevron.com/-/media/shared-media/documents/chevron-sustainability-highlights-2024.pdf",
+      "source_vintage": "2024"
+    },
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": null,
+      "raw_sha256": null,
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-DE-SCOPE1-2024",
+      "source_location": "2024 environmental metrics table, Scope 1",
+      "source_title": "John Deere 2024 Sustainability Disclosure",
+      "source_url": "https://www.deere.com/assets/pdfs/common/our-company/sustainability/data-book-2024.pdf",
+      "source_vintage": "2024"
+    },
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": "data/releases/CFP-2026-003-R13-20260804T193000Z/raw/issuer_reports/duk-metrics.pdf",
+      "raw_sha256": "6504844f93ae951a006b5495fb2120fc5cb2af5d6fb5c7f60f19f9d558898213",
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-DUK-SCOPE1-2024",
+      "source_location": "2024 Scope 1 component table; sum of reported electric, gas, fleet, ancillary, SF6, refrigerant and building-gas rows",
+      "source_title": "Duke Energy 2025 Sustainability Metrics",
+      "source_url": "https://s201.q4cdn.com/583395453/files/doc_downloads/2026/2025-Sustainability-Metrics-Center.pdf",
+      "source_vintage": "2024"
+    },
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": "data/releases/CFP-2026-003-R13-20260804T193000Z/raw/issuer_reports/microsoft-fact-sheet.pdf",
+      "raw_sha256": "9283b1e85005a050fb7732c2eb25da6918bf46cafe5e6903d81063c81f466174",
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-MSFT-SCOPE1-2024",
+      "source_location": "FY24 emissions table, Scope 1",
+      "source_title": "Microsoft 2025 Environmental Data Fact Sheet",
+      "source_url": "https://aka.ms/SustainabilityFactsheet2025",
+      "source_vintage": "2024"
+    },
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": "data/releases/CFP-2026-003-R13-20260804T193000Z/raw/issuer_reports/nextera.pdf",
+      "raw_sha256": "f544037674f10f3543698d57168fa483438aa490623c864e8afb9a7565b8d320",
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-NEE-SCOPE1-2024",
+      "source_location": "2025 Data Appendix, 2024 Scope 1",
+      "source_title": "NextEra Energy 2025 Data Appendix",
+      "source_url": "https://www.investor.nexteraenergy.com/~/media/Files/N/NEE-IR/Sustainability/2025/Data%20Appendix.pdf",
+      "source_vintage": "2024"
+    },
+    {
+      "allowed_use": "reported Scope 1 quantity for a uniform analytical carbon-price sensitivity",
+      "limitation": "organizational and geographic boundaries vary; this is not verified covered emissions or net transition cost",
+      "raw_path": null,
+      "raw_sha256": null,
+      "retrieved_at": "2026-08-04T19:00:00Z",
+      "source_class": "issuer-published sustainability disclosure",
+      "source_id": "SRC-ISSUER-XOM-SCOPE1-2024",
+      "source_location": "2024 operated GHG emissions table, Scope 1",
+      "source_title": "ExxonMobil Metrics and Data",
+      "source_url": "https://corporate.exxonmobil.com/what-we-do/energy-supply/emissions-and-efficiency/metrics-and-data",
+      "source_vintage": "2024"
+    }
+  ],
+  "updated_at": "2026-08-04T19:16:54+00:00"
+}

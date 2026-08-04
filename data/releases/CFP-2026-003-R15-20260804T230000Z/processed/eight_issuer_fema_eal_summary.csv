@@ -1,0 +1,9 @@
+ticker,facility_count,fema_eal_matches,emissions_weighted_building_eal_rate,equal_weighted_building_eal_rate,weighting_method,source_url
+AAPL,0,0,,,unavailable,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+CAT,7,7,0.001250652491518801,0.0013669715913878506,EPA reported direct tCO2e,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+CVX,53,34,0.0031761728843062802,0.0024955657892041867,EPA reported direct tCO2e,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+DE,1,1,0.001054287290454164,0.001054287290454164,EPA reported direct tCO2e,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+DUK,49,48,0.001756599555504602,0.0015029038513748375,EPA reported direct tCO2e,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+MSFT,0,0,,,unavailable,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+NEE,27,23,0.0025009029941509913,0.002417184902431812,EPA reported direct tCO2e,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+XOM,68,49,0.0018613243120519987,0.0015849119045176535,EPA reported direct tCO2e,https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0

@@ -1,0 +1,9 @@
+ticker,parent_records,direct_emitter_matches,selected,selection_reason
+AAPL,0,0,False,not selected for first pilot
+CAT,7,7,False,not selected for first pilot
+CVX,53,31,False,not selected for first pilot
+DE,1,1,False,not selected for first pilot
+DUK,49,40,True,SEC history + utility FCFF boundary + EPA ownership/emissions/coordinates
+MSFT,0,0,False,not selected for first pilot
+NEE,27,20,False,not selected for first pilot
+XOM,68,35,False,not selected for first pilot

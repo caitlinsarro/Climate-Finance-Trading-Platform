@@ -1,0 +1,38 @@
+{
+  "created_at": "2026-07-28T23:13:35+00:00",
+  "credential_values_stored": false,
+  "feature_id": "CFP-2026-002",
+  "release_id": "CFP-2026-002-R2-20260728T2314Z",
+  "source_entries": [
+    {
+      "allowed_use": "historical hazard context only",
+      "content_type": "application/gzip",
+      "limitation": "Official publication with incomplete/unverified source reports; not issuer loss.",
+      "processed_path": "data/releases/CFP-2026-002-R2-20260728T2314Z/processed/noaa_storms_2025_flat.csv",
+      "raw_bytes": 12588605,
+      "raw_path": "data/releases/CFP-2026-002-R2-20260728T2314Z/raw/noaa_storms/StormEvents_details-ftp_v1.0_d2025_c20260728.csv.gz",
+      "raw_sha256": "447b536ce7796585b923b946f0b85be538bde142858674f5d0b45a3b4c134bf5",
+      "record_count": 72360,
+      "retrieved_at": "2026-07-28T23:13:37+00:00",
+      "source_class": "official government",
+      "source_id": "SRC-NOAA-STORMS",
+      "source_url": "https://www.ncei.noaa.gov/pub/data/swdi/stormevents/csvfiles/StormEvents_details-ftp_v1.0_d2025_c20260728.csv.gz",
+      "source_vintage": "2025"
+    },
+    {
+      "allowed_use": "tactical hazard context only",
+      "content_type": "application/geo+json",
+      "limitation": "Active-alert snapshot; not a historical tape, probability, exposure, or loss.",
+      "processed_path": "data/releases/CFP-2026-002-R2-20260728T2314Z/processed/nws_alerts_flat.csv",
+      "raw_bytes": 2622077,
+      "raw_path": "data/releases/CFP-2026-002-R2-20260728T2314Z/raw/nws/active_alerts.geojson",
+      "raw_sha256": "b97f41922d8991e7f7b76b14dda2cd1360f26eddd09d7147291f7095d6e6bba6",
+      "record_count": 469,
+      "retrieved_at": "2026-07-28T23:13:35+00:00",
+      "source_class": "official government",
+      "source_id": "SRC-NWS",
+      "source_url": "https://api.weather.gov/alerts/active"
+    }
+  ],
+  "updated_at": "2026-07-28T23:13:39+00:00"
+}

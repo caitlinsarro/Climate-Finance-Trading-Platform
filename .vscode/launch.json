@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Climate Finance Dashboard",
+      "type": "python",
+      "request": "launch",
+      "program": "/Users/zilunhe/Desktop/Climate-Finance-Trading-Platform/app.py",
+      "cwd": "/Users/zilunhe/Desktop/Climate-Finance-Trading-Platform",
+      "python": "/Users/zilunhe/Desktop/Climate-Finance-Trading-Platform/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

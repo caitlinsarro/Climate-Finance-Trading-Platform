@@ -1,0 +1,15 @@
+# Climate-Finance Trading & Risk Platform Roadmap
+
+## Governance and model integrity
+
+| Feature | Status | Decision | Delivered | Deferred / next milestone |
+|---|---|---|---|---|
+| CFP-2026-001 | Completed | Engineering Accepted; model not promoted | Climate-risk mathematical-integrity constitution, methodology audit, validation evidence, and promotion gate | Maintainer review and ratification of constitution |
+| CFP-2026-002 | Iterate — Increments A/B, partial C, NWS fail-closed, issuer integrity, local equity master, and Yahoo WACC feasibility reviewed | Engineering increments accepted; exclusive real-time Yahoo WACC rejected; feature Iterate; model not promoted | Correct climate provenance and fail-closed behavior; 52 tests; immutable issuer-sector release `issuer-sector-20260729T021957Z`; 10,411 SEC identity rows; 7,130 Nasdaq securities; 5,730 eligible local equity-sector mappings across 11 canonical sectors; rejected non-common and unsupported records retained; PFE/Healthcare and IBM/Technology browser-verified; on-demand fallback for eligible equities outside the master; GS mapped to Financials; physical, macro/supply-chain, and direct-transition deltas separated; issuer tactical trade suppressed without verified facilities; immutable climate release `CFP-2026-002-R2-20260728T2314Z`; 21-sheet governed workbook; declared yfinance dependency installed and Deere field availability tested | Implement cached, field-level Yahoo ingestion only as a best-effort source; fail closed when beta/market cap/debt/statement fields are missing; source dated Treasury/ERP/terminal growth independently; extend beyond US exchange listings; verify facilities, revenue geography, supplier/customer links, and fund look-through; adopt an approved financial-institution valuation method; ingest EPA/NGFS/BEA/FEMA/NASA; add dimensional/manual tie-outs |
+| CFP-2026-003 | Eight-issuer public-data valuation prototype accepted; model Iterate | R17 Scope 1/2/3, SEC PP&E/FCFF, FEMA EAL, CIE physical pathways, company-specific CapEx/CFO transmission, annual target/reference DCF, and compact client UI accepted; production Climate VaR and investment approval not accepted | Hash-governed public files and calculations for eight issuers; FEMA EAL replaces risk-score loss conversion; Scope 1/2/3 transition legs remain separate; acute/chronic physical legs reconcile; Low/Base/High assumptions visible; exact Shapley attribution; DUK Base `-4.74%` and range `-1.91% / -4.74% / -9.82%`; AAPL small transition displays `<0.01%`; 86 tests; browser verified | Replace incidence, covered-asset, insurance/adaptation, acute-scaling, macro-elasticity, ERP, and terminal-growth assumptions with estimated/validated parameters; add jurisdiction and value-chain weights; benchmark against licensed Bloomberg/MSCI; out-of-sample and independent quant validation before investment use |
+
+## Current model stage
+
+**Research only.** Conditional scenario sensitivities and pressure indicators
+must not be represented as forecasts, probabilities, production loss estimates,
+or investment-authorized model outputs.

@@ -1,109 +1,185 @@
-# Jennison Climate-Finance Trading & Risk Platform
+# Jennison Climate-Risk Research Platform
 
-Institutional U.S.-listed climate-finance research workspace for portfolio decisions, scenario repricing, risk attribution, and validation.
+This repository is a research prototype for transparent climate scenario analysis. It separates physical risk, macro and supply-chain transmission, and direct transition channels so an analyst can see what drives a result.
 
-## What It Does
+The model is **not promoted for portfolio construction, security recommendations, tactical trading, audited valuation, or regulatory Climate VaR**. Engineering acceptance is separate from model and investment approval.
 
-- Investment Committee View combining strategic posture, tactical action, largest risk contributor, evidence confidence, and affected holdings
-- Portfolio construction workspace with ETF-only, ETF + stock, and stock-only modes; short/long horizons; and mandate-aware sizing
-- Explicit portfolio risk budget with maximum position, HHI, effective positions, climate active share, weighted holding-tail proxy, capital at risk, and internal watch checks
-- Market-only ablation for every holding so clients can see exactly how climate data changed the target weight
-- Interactive Scenario & Event Lab across country, sector, issuer, and portfolio scopes
-- Long-term target-vs-reference repricing through climate-adjusted cash flows and present value
-- Short-term NWS event nowcast translating hazard intensity, exposure beta, and vulnerability into tactical basis points
-- Conditional scenario-tail matrix with no assigned occurrence probabilities and no claim of regulatory Expected Shortfall
-- Point-in-time climate buy/sell walk-forward validation over 3 weeks, 3 months, and 3 years using the selected portfolio universe; 3 months is the default evidence window and 3 weeks is explicitly treated as a monitoring diagnostic
-- Configurable trading and short-borrow costs with net and gross return, compounded cost drag, turnover, drawdown, hit rate, and information-ratio reporting
-- Climate Signals, Data Lineage & Coverage view combining NWS, NASA GISTEMP, NOAA GML CO2, NCEI disasters, allocation transmission, source status, and known data gaps
-- Explicit separation of observed inputs, calibrated proxies, and missing facility/revenue/supply-chain data
-- Issuer analysis inside the same target-versus-reference Scenario Lab used for country, sector, and portfolio scopes
-- Automatic climate universe ranked from market behavior, live climate conditions, sector transmission, issuer resilience, and conditional scenario loss
-- Institutional, responsive UI focused on decision, attribution, risk budget, and validation rather than generic quote or chart screens
+## Current governed scope
 
-## Validation discipline
+The client-facing application currently supports:
 
-The validation view evaluates the same universe selected by the portfolio optimizer. Each historical signal date ranks assets using information available up to that date, applies the buy and sell sleeves for the next trading day, and deducts modeled trading and borrow costs. The 3-week result is directional, the 3-month result is the default tactical evidence window, and the 3-year result provides longer-horizon context.
+- target-versus-reference scenario research;
+- eight issuer demonstrations for AAPL, CAT, CVX, DE, DUK, MSFT, NEE, and XOM;
+- separate physical, macro/supply-chain, and direct-transition attribution;
+- annual FCFF and common-rate target/reference DCF with exact attribution;
+- explicit public-data versus Low/Base/High assumption labels;
+- data lineage and calculation-reconciliation evidence in a collapsed disclosure.
 
-Historical market features are point-in-time. Annual climate features use expanding-window normalization and the latest completed calendar-year vintage. The signal holds a 100% long sleeve and a 25% short sleeve, so its 75% net risky exposure is compared with a 75% equal-weight universe plus 25% cash. The prototype does not reconstruct a complete archived daily NWS alert tape or survivorship-free historical constituents. Reported results therefore remain research evidence rather than a production performance claim, and they exclude market impact, taxes, financing, and security-level locate constraints.
+The former optimizer, climate buy/sell backtest, tactical basis-point overlay, and recommendation views remain isolated as engineering sandbox code. They are hidden from the governed interface and are not calculated on normal page load.
 
-## U.S. Market Assumptions
+## What the numbers mean today
 
-- Uses U.S. tickers, sector ETFs, and USD portfolio sizing
-- Does not use China A-share boards, daily price limits, 100-share lot rules, or China resale constraints
-- Supports single-share/fractional-share style allocation logic
-- Research prototype only; not live investment advice
+Long-term results are **conditional research sensitivities**. They answer: “If the selected target pathway replaced the reference pathway, how would the current project calibration change the modeled cash-flow proxy?” They are not event probabilities, forecasts, audited issuer values, or investment recommendations.
 
-## Scenario & Event Methodology
+Short-term NWS output is not part of the client demonstration. The prototype is
+limited to long-horizon scenario-conditioned valuation.
 
-The platform now separates strategic climate valuation from tactical event risk:
+## Quantitative structure
 
-- `Long-term`: choose a target and reference scenario. Country GDP and supply shocks pass through sector GDP/input-output betas and issuer earnings sensitivity. Acute and chronic physical losses are downscaled separately. Climate-adjusted FCFF is discounted with issuer/sector-specific WACC and terminal growth. Nonlinear attribution uses exact Shapley values across all disclosed cash-flow channels.
-- `Transition cash flow`: atmospheric CO2 concentration is climate-state context, not a policy-risk input. Business-model transition risk is decomposed as `carbon cost + demand shift + energy cost + transition CapEx - pass-through`, with each channel shown separately in the valuation attribution.
-- `Short-term`: each NWS hazard severity nowcast is multiplied by location exposure, hazard vulnerability, and one minus resilience. NWS alerts are not interpreted as disaster probabilities. The portfolio tilt is centered to be zero-sum around strategic weights and no holding moves more than 250 basis points. No hazard mix means no tactical trade.
-- `Scope`: the same chain can be read at country, sector, issuer, or current-portfolio level.
-- `Scenario rule`: NGFS-style scenarios are conditional stresses, not forecasts. The model does not assign occurrence probabilities to them.
-- `Tail rule`: the mean of the two largest portfolio scenario losses is labeled a scenario-tail proxy, not regulatory Expected Shortfall. It is kept separate from physical and transition pressure to avoid double counting.
-- `Model risk`: physical damage coefficients are rerun at `0.70x` and `1.30x`. The resulting range is a transparent sensitivity band, not a statistical confidence interval.
+### Direct transition risk
 
-The scenario paths, sector medians, and issuer vulnerability ratios in this prototype are documented, replaceable calibrations. They are not Bloomberg data. The former stand-alone issuer Monte Carlo module was removed because its distributional assumptions were not calibrated strongly enough to support precise P95/P99 claims. Issuer scope now uses the same auditable target-reference scenario engine as every other scope. A production implementation should replace issuer proxies with geolocated facilities, revenue segmentation, supply-chain links, and licensed NGFS or vendor scenario data.
-
-The physical downscaling follows the structure described in the supplied Bloomberg methodology: sector loss equals country loss multiplied by sector vulnerability divided by the economy-weighted average vulnerability; issuer loss then applies a bounded issuer-to-sector vulnerability ratio. Covered-sector value-added weights reconcile the weighted sector multiplier to exactly `1.0`. The app exposes this check, portfolio-weight reconciliation, target/reference present values, and Shapley residuals in the Calculation Ledger.
-
-## Portfolio Optimizer
-
-The optimizer is designed for an asset-investor workflow:
-
-- `ETF only`: builds diversified exposure from ETFs only
-- `ETF + stock`: uses ETFs as the core sleeve and single stocks as satellite positions
-- `Stock only`: allocates only across selected U.S.-listed companies
-- `Short-term`: starts from the strategic portfolio and applies a separate 1-20 trading-day market/event overlay
-- `Long-term`: uses a one-year daily market history, structural physical/transition risk, and 5-30 year target-versus-reference cash-flow losses; current NWS alerts do not change strategic weights
-- `Balanced`: balances expected return, covariance risk, scenario losses, tracking error, turnover, and explicit climate-risk budgets
-- `Climate defense`: gives more weight to lower conditional climate loss and resilient sectors
-- `Growth`: gives more weight to market momentum and single-name upside
-- `Low volatility`: reduces high-volatility and high-tail-risk exposure
-
-By default, the optimizer uses an automatic climate universe. It ranks climate-related ETFs and stocks from the daily climate relation signal, broad-market anchors, and sector physical/transition risk profiles. Advanced users can still override the ETF and stock candidate lists manually.
-
-For each asset, the optimizer separates a market-derived expected-return signal from climate-risk indicators. Climate information is not assumed to be alpha. The strategic optimizer solves the disclosed robust objective
-
-`max mu'w - lambda w'Sigma w - kappa max_s L_s(w) - eta (w-w_market)'Sigma(w-w_market) - tau ||w-w_market||_1`
-
-subject to sleeve budgets, single-name and sector caps, liquidity/confidence limits, tracking error, maximum scenario loss, physical-risk, transition-risk, and carbon-cost budgets. At every projected-gradient iteration the solver identifies the current portfolio's worst conditional scenario and uses that scenario's loss vector as the subgradient. The final L1 term is active share versus the market-only reference, not realized turnover versus an uploaded prior portfolio. Capital only converts weights into target dollars and estimated shares.
-
-The climate buy/sell backtest is a one-step walk-forward replay over the selected optimizer universe. Each historical signal date uses information available before the next trading day, forms climate-on and market-only buy/sell books with equal exposure and costs, and reports `IncrementalClimateValue = Performance_FullModel - Performance_MarketOnly`. It adds block-bootstrap intervals and a sign-permutation test. The current prototype still lacks a complete archived NWS tape, historical index constituents, delisted securities, and ALFRED macro vintages; these limitations are stated in the interface rather than hidden.
-
-## Climate Data Sources
-
-- NASA GISTEMP land-ocean annual temperature anomaly CSV
-- NOAA Global Monitoring Laboratory Mauna Loa monthly CO2 CSV
-- NOAA National Centers for Environmental Information billion-dollar weather and climate disaster event JSON
-- NWS active weather alerts for acute daily physical climate pressure
-- BEA GDP by Industry and Input-Output Accounts for country-to-sector and supply-chain transmission
-- FRED/ALFRED for macroeconomic series and historical data vintages
-- NOAA Storm Events for event calibration and NASA NEX-GDDP-CMIP6 for downscaled future hazard paths
-- FEMA National Risk Index, NASA FIRMS, AirNow, NOAA CPC/NWPS, EPA GHGRP/eGRID, EIA Open Data, NGFS scenarios, and SEC EDGAR APIs as source-ready expansion points
-
-The app caches official climate data locally under `data/official_climate_data_cache.json` and falls back to built-in proxy values if an external source is unavailable.
-
-NOAA CO2 observations are displayed as climate context only and are explicitly excluded from the transition-risk score. Transition channels currently use disclosed sector calibrations when issuer-level NGFS, EIA, EPA eGRID/GHGRP, and SEC financial inputs are unavailable; the UI identifies that fallback rather than inventing a live policy signal.
-
-## Install
-
-```powershell
-pip install -r requirements.txt
-```
-
-`yfinance`, `pandas`, and `numpy` are optional but recommended. If verified market data is unavailable or insufficient, portfolio validation is suppressed and labeled unavailable. The app does not substitute simulated prices or returns into client-facing performance.
-
-## Run
-
-```powershell
-python app.py
-```
-
-Then open:
+The intended issuer-level structure is:
 
 ```text
-http://127.0.0.1:8865
+carbon cost
++ energy cost
++ incremental transition CapEx
++ climate-policy/product demand effect
+- demonstrated cost pass-through
+= annual transition cash-flow effect
 ```
+
+The current prototype separates reported Scope 1 direct emissions, Scope 2
+purchased-energy exposure, and Scope 3 value-chain exposure. It applies official
+NGFS carbon-price paths and visible Low/Base/High incidence, pass-through, and
+emissions-decline assumptions. Scope 3 is not treated as a direct issuer tax.
+
+Atmospheric CO2 concentration is climate-state context only. It is not used as a carbon price or direct transition-risk score.
+
+### Physical risk
+
+The intended facility-level structure is:
+
+```text
+hazard intensity
+x verified location exposure
+x hazard-specific damage or vulnerability function
+x asset or earnings value at risk
+x (1 - evidenced resilience)
++ business interruption
+= physical cash-flow effect
+```
+
+The current prototype uses SEC net PP&E and joins EPA parent facilities to FEMA
+county building expected annual loss rates. Chronic physical stress uses the
+official CIE USA heat-productivity pathway. Covered asset share,
+insurance/adaptation, acute scenario scaling, and productivity-to-FCFF
+conversion remain explicit assumptions; the output is not an observed loss.
+
+### Valuation
+
+The intended valuation is an annual FCFF bridge under both target and reference pathways, discounted under a governed assumption grid. A single market rate is insufficient for an issuer WACC.
+
+The current governed calculation uses SEC FCFF inputs, five-year monthly market
+beta, the dated U.S. Treasury yield, public debt/market capitalization, and a
+visible ERP/terminal-growth assumption grid. It reports a modeled enterprise-
+value sensitivity, not a decision-grade price target.
+
+## Official data and provenance
+
+Authoritative source ingestion preserves raw bytes, processed output, source URL, retrieval time, release ID, and SHA-256 hashes under `data/releases/`.
+
+Currently loaded for feature `CFP-2026-003`:
+
+- U.S. Treasury daily par yields, including the observed 10-year yield, release `CFP-2026-003-R1-20260731T2318Z`.
+- Official NGFS Phase 5.1 USA transition pathways, release `CFP-2026-003-R5-20260731T2351Z`: 882 observations across seven scenarios, three models, six transition variables, and 2020-2050 five-year horizons. The model range is not a probability interval. Phase 5 physical-damage variables affected by the retracted Kotz et al. paper are excluded.
+- SEC Financial Statement Data Sets from 2009 Q1 through 2026 Q1: all 69 official quarterly ZIP archives are preserved locally in raw release `CFP-2026-003-R6-20260801T003356Z` (about 5.2 GB). Hash-verified processed release `CFP-2026-003-R8-20260801T005207Z` contains 4,078 candidate facts and 139 annual filings for AAPL, CAT, CVX, DE, DUK, MSFT, NEE, and XOM. This is a financial-history input, not a completed FCFF tie-out.
+- DUK governed pilot release `CFP-2026-003-R10-20260801T015000Z`: official Duke 2025 10-K, EPA GHGRP/eGRID, and FEMA NRI evidence; 49 EPA parent records, 40 direct-emitter and coordinate matches, 72.00 Mt ownership-adjusted matched non-biogenic CO2, a manually tied $1.53bn 2025 FCFF bridge, and a $155.4m gross static NGFS carbon-price illustration. The illustration is not net cost or a forecast. Issuer physical loss and DCF remain Not calculable.
+- Eight-issuer prototype release `CFP-2026-003-R11-20260801T023000Z`: consistent 2025 FCF screen for AAPL, CAT, CVX, DE, DUK, MSFT, NEE, and XOM. The client Model Lab uses clickable issuer cards and follows transition, physical, and macro/supply effects through FCF and a simple continuing-value bridge. Client-facing NWS short-term output is removed from this demo flow.
+- The Model Lab decision view now shows each issuer's physical, direct-transition, and macro/supply-chain rates and currency effects on one FCF/FCFF baseline, reconciles them to scenario cash flow and continuing-value sensitivity, and translates the result into peer comparison, risk-budget, and issuer-engagement uses without generating a trade.
+- R17 public-data extension `CFP-2026-003-R17-20260804T234500Z`: issuer Scope
+  1/2/3, SEC net PP&E, expanded FEMA building EAL rates, CIE USA
+  heat-productivity paths, and 24 Low/Base/High assumption rows are retained and
+  hash verified. FEMA scores no longer create issuer loss rates.
+
+Available governed context from earlier releases includes NWS alerts, NOAA Storm Events, and the issuer-sector master. These datasets do not by themselves establish issuer facility exposure or climate loss.
+
+EPA GHGRP, FEMA EAL, SEC, NGFS, and CIE inputs are integrated for the bounded
+eight-issuer prototype. EIA capacity weights, BEA input-output company mapping,
+issuer supplier/customer economics, insurance, adaptation, and licensed vendor
+benchmarks remain future work.
+
+SEC financial data require no API key. The completed downloader preserves each raw ZIP locally, supports resume and source-release reprocessing, resolves controlled historical registrant CIK aliases, and extracts governed candidate-issuer facts. The contact email used for SEC fair-access compliance is not stored. The model still fails closed on issuer FCFF until filing and accounting tie-outs are completed.
+
+See [docs/api-access.md](docs/api-access.md) for access rules and local credentials. Secrets must never be committed, logged, written to workbooks, or included in release manifests.
+
+## Governed workflow
+
+All model changes follow:
+
+```text
+Constitution -> Replanning -> Specification -> Implementation
+-> Validation -> Decision -> Roadmap update
+```
+
+The active overhaul is `CFP-2026-003`. Its documents are under `specs/CFP-2026-003/`. Validation must distinguish mathematical reconciliation from empirical validity. Passing unit tests does not promote a model.
+
+## Run locally
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python app.py
+```
+
+Open `http://127.0.0.1:8865`.
+
+## Ingest free official data
+
+Check optional credentials without displaying their values:
+
+```bash
+.venv/bin/python scripts/ingest_authoritative_data.py status
+```
+
+Load a governed U.S. Treasury release without an API key:
+
+```bash
+.venv/bin/python scripts/ingest_authoritative_data.py treasury \
+  --release-id CFP-2026-003-R2-YYYYMMDDTHHMMZ \
+  --treasury-year 2026
+```
+
+Load the official NGFS transition release without a permanent API key:
+
+```bash
+.venv/bin/python scripts/ingest_authoritative_data.py ngfs-transition \
+  --release-id CFP-2026-003-RX-YYYYMMDDTHHMMZ \
+  --ngfs-region USA \
+  --ngfs-end-year 2050
+```
+
+After exporting an SEC-compliant `SEC_USER_AGENT` locally, download and process all published quarterly SEC Financial Statement Data Sets from 2009 Q1 through 2026 Q1:
+
+```bash
+.venv/bin/python scripts/ingest_authoritative_data.py sec-financials \
+  --release-id CFP-2026-003-RX-YYYYMMDDTHHMMZ \
+  --sec-start-year 2009 \
+  --sec-end-year 2026 \
+  --sec-end-quarter 1
+```
+
+Raw quarterly ZIP files stay local and are ignored by Git; processed facts and the hash manifest remain governed. The command resumes from already-downloaded immutable archives.
+
+Never reuse a release ID or overwrite immutable release bytes.
+
+Build a new DUK evidence release (the SEC contact is supplied only as a local
+environment variable and is never stored):
+
+```bash
+.venv/bin/python scripts/build_duke_pilot.py \
+  --release-id CFP-2026-003-RX-YYYYMMDDTHHMMZ \
+  --sec-release-id CFP-2026-003-R8-20260801T005207Z \
+  --ngfs-release-id CFP-2026-003-R5-20260731T2351Z
+```
+
+## Tests
+
+```bash
+.venv/bin/python -m unittest -v \
+  test_climate_methodology.py \
+  test_authoritative_ingestion.py \
+  test_duke_pilot.py
+```
+
+The tests cover engineering contracts, reconciliation, fail-closed behavior, and release integrity. They do not establish forecast accuracy, damage-function validity, or investment usefulness.

@@ -1,0 +1,64 @@
+{
+  "created_at": "2026-07-31T23:48:05+00:00",
+  "credential_values_stored": false,
+  "feature_id": "CFP-2026-003",
+  "release_id": "CFP-2026-003-R5-20260731T2351Z",
+  "source_entries": [
+    {
+      "allowed_use": "conditional transition pathways only; no scenario probability",
+      "api_url": "https://db1.ene.iiasa.ac.at/ngfs-phase-5-api/rest/v2.1",
+      "content_types": {
+        "query_response": "application/json",
+        "runs": "application/json",
+        "timeseries_metadata": "application/json"
+      },
+      "credential_values_stored": false,
+      "limitation": "Phase 5 physical damage variables affected by the retracted Kotz et al. paper are excluded.",
+      "models": [
+        "Downscaling[GCAM 6.0 NGFS]",
+        "Downscaling[MESSAGEix-GLOBIOM 2.0-M-R12-NGFS]",
+        "Downscaling[REMIND-MAgPIE 3.3-4.8]"
+      ],
+      "processed_path": "data/releases/CFP-2026-003-R5-20260731T2351Z/processed/ngfs_5_1_transition_usa_to_2050.csv",
+      "processed_sha256": "f5f579911148f8665302603b5f6f45e8adce1e9938533b872c4a5f28e05c690a",
+      "raw_paths": {
+        "query_request": "data/releases/CFP-2026-003-R5-20260731T2351Z/raw/ngfs_phase_5_1/usa_transition_request.json",
+        "query_response": "data/releases/CFP-2026-003-R5-20260731T2351Z/raw/ngfs_phase_5_1/usa_transition_response.json",
+        "runs": "data/releases/CFP-2026-003-R5-20260731T2351Z/raw/ngfs_phase_5_1/runs.json",
+        "timeseries_metadata": "data/releases/CFP-2026-003-R5-20260731T2351Z/raw/ngfs_phase_5_1/timeseries_metadata.json"
+      },
+      "raw_sha256": {
+        "query_request": "1b79fa94d01292bf361bec7ea452bdf7873d3e91d88a6cbe54c83cc50f8e5082",
+        "query_response": "5013535d5ccd684d7f7a50c441ffb35cc7fd96968cd92643181b66d1cdbe462c",
+        "runs": "f90e66bf49a0b559c27c3b2e0ae86bc6eb90a267c747df07bf48e304de25713e",
+        "timeseries_metadata": "f005af0bbd47f3f0d1ce322ad1bfc608f9b1920920be04d7f57ef10a5d9bdca6"
+      },
+      "record_count": 882,
+      "region": "USA",
+      "retrieved_at": "2026-07-31T23:48:05+00:00",
+      "scenarios": [
+        "Below 2°C",
+        "Current Policies",
+        "Delayed transition",
+        "Fragmented World",
+        "Low demand",
+        "Nationally Determined Contributions (NDCs)",
+        "Net Zero 2050"
+      ],
+      "source_class": "official NGFS scenario data hosted by IIASA",
+      "source_id": "SRC-NGFS-PHASE-5-1-TRANSITION",
+      "source_release_date": "2026-03-20",
+      "source_url": "https://data.ene.iiasa.ac.at/ngfs/",
+      "source_vintage": "5.1",
+      "variables": [
+        "Price|Carbon",
+        "Final Energy|Industry",
+        "Final Energy|Industry|Electricity",
+        "Final Energy|Industry|Gases",
+        "Final Energy|Industry|Liquids",
+        "Final Energy|Industry|Solids"
+      ]
+    }
+  ],
+  "updated_at": "2026-07-31T23:48:08+00:00"
+}

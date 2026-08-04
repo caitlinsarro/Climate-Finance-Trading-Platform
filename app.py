@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Jennison Climate-Finance Trading & Risk Platform
+Jennison Climate-Risk Research Platform
 
 Local client-facing prototype inspired by the existing China A-share dashboard.
 Run:
@@ -12,6 +12,7 @@ Open:
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import sys
 import threading
@@ -20,6 +21,7 @@ import webbrowser
 import csv
 import io
 import random
+import statistics
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -42,6 +44,7 @@ except Exception:  # pragma: no cover
 PROJECT_DIR = Path(__file__).parent
 DATA_DIR = PROJECT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
+ISSUER_SECTOR_MASTER_PATH = DATA_DIR / "issuer_sector_master.csv"
 
 PORT = 8865
 DEFAULT_PORTFOLIO_VALUE = 50_000_000
@@ -79,9 +82,29 @@ SEC_EDGAR_API_URL = "https://www.sec.gov/search-filings/edgar-application-progra
 BEA_GDP_INDUSTRY_URL = "https://www.bea.gov/data/gdp/gdp-industry"
 BEA_INPUT_OUTPUT_URL = "https://www.bea.gov/data/industries/input-output-accounts-data"
 FRED_ALFRED_URL = "https://fred.stlouisfed.org/docs/api/fred/overview.html"
+US_TREASURY_RATES_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
 NOAA_STORM_EVENTS_BULK_URL = "https://www.ncei.noaa.gov/stormevents/ftp.jsp"
 NASA_NEX_GDDP_URL = "https://www.nasa.gov/nasa-earth-exchange-nex/gddp/downscaled-climate-projections-nex-gddp-cmip6/"
 FACILITY_EXPOSURE_FILE = DATA_DIR / "issuer_facility_exposure.json"
+
+
+def governed_release_sort_key(release_id):
+    """Sort CFP releases by numeric R ordinal instead of lexicographic text."""
+    text = str(release_id or "")
+    ordinal = 0
+    for part in text.split("-"):
+        if len(part) > 1 and part[0] == "R" and part[1:].isdigit():
+            ordinal = int(part[1:])
+            break
+    return ordinal, text
+
+NGFS_SCENARIO_LABELS = {
+    "below_2c": "Below 2°C",
+    "current_policies": "Current Policies",
+    "delayed_transition": "Delayed transition",
+    "fragmented_world": "Fragmented World",
+    "net_zero_2050": "Net Zero 2050",
+}
 
 
 SECTOR_ETFS = {
@@ -511,6 +534,39 @@ ISSUER_VULNERABILITY_OVERRIDES = {
     "CB": {"acute_ratio": 0.80, "chronic_ratio": 0.92, "quality": "Issuer proxy"},
 }
 
+# Controlled research taxonomy used by issuer-level application paths. This is
+# an explicit project crosswalk, not observed issuer climate data and not a
+# substitute for the governed Entity_Master export planned by CFP-2026-002.
+ISSUER_SECTOR_CROSSWALK = {
+    "AAPL": "Technology",
+    "MSFT": "Technology",
+    "NVDA": "Technology",
+    "FSLR": "Technology",
+    "ENPH": "Technology",
+    "XOM": "Energy",
+    "CVX": "Energy",
+    "NEE": "Utilities",
+    "DUK": "Utilities",
+    "JPM": "Financials",
+    "BAC": "Financials",
+    "GS": "Financials",
+    "TRV": "Financials",
+    "CB": "Financials",
+    "CAT": "Industrials",
+    "DE": "Industrials",
+    "AMZN": "Consumer Cyclical",
+    "TSLA": "Consumer Cyclical",
+    "GOOGL": "Communication Services",
+    "META": "Communication Services",
+}
+ISSUER_SECTOR_CROSSWALK_AS_OF = "2026-07-28"
+ISSUER_SECTOR_CROSSWALK_SOURCE = "Controlled application research taxonomy; governed Entity_Master export pending"
+MARKET_SECTOR_METADATA_SOURCE = "Yahoo Finance quote metadata via yfinance; reference classification, not issuer-verified"
+MARKET_SECTOR_METADATA_CACHE = {}
+MARKET_SECTOR_METADATA_LOCK = threading.Lock()
+ISSUER_SECTOR_MASTER_CACHE = None
+ISSUER_SECTOR_MASTER_LOCK = threading.Lock()
+
 
 HAZARD_SECTOR_BETAS = {
     "heat": {"Energy": 0.66, "Utilities": 0.92, "Industrials": 0.76, "Technology": 0.44, "Financials": 0.28, "Financial Services": 0.28, "Consumer Cyclical": 0.55, "Consumer Defensive": 0.60, "Healthcare": 0.58, "Basic Materials": 0.78, "Real Estate": 0.54, "Communication Services": 0.38},
@@ -655,6 +711,13 @@ CLIMATE_DATA_SOURCE_CATALOG = [
         "client_use": "Vintage GDP, inflation, unemployment, rates, and energy series for revision-safe backtests.",
     },
     {
+        "name": "U.S. Treasury Daily Rates",
+        "risk_type": "Valuation input",
+        "status": "Governed release check",
+        "url": US_TREASURY_RATES_URL,
+        "client_use": "Observed Treasury par yield input. It supplies the risk-free leg only and does not complete an issuer WACC.",
+    },
+    {
         "name": "NOAA Storm Events",
         "risk_type": "Historical acute physical",
         "status": "Source-ready",
@@ -672,7 +735,8 @@ CLIMATE_DATA_SOURCE_CATALOG = [
 
 
 CLIMATE_PROXY = [
-    # year, NASA-like global temperature anomaly proxy, NOAA billion-dollar disaster frequency proxy
+    # Research-only historical proxy. These values are never eligible for
+    # decision input and stop at the last fixed historical placeholder vintage.
     (2008, 0.54, 12),
     (2009, 0.64, 10),
     (2010, 0.72, 13),
@@ -690,8 +754,6 @@ CLIMATE_PROXY = [
     (2022, 0.89, 18),
     (2023, 1.18, 28),
     (2024, 1.28, 27),
-    (2025, 1.22, 24),
-    (2026, 1.26, 25),
 ]
 
 
@@ -758,7 +820,23 @@ def read_cached_official_climate_data(max_age_days=7):
         if age_days <= max_age_days:
             try:
                 cached = json.loads(CLIMATE_DATA_CACHE.read_text(encoding="utf-8"))
-                cached["source_mode"] = "cached official climate data"
+                fallback_notes = [
+                    note
+                    for note in cached.get("source_notes", [])
+                    if "fallback" in str(note).lower() or "proxy" in str(note).lower()
+                ]
+                if fallback_notes:
+                    cached["source_mode_original"] = cached.get("source_mode")
+                    cached["source_mode"] = (
+                        "mixed official and non-official climate data"
+                        if len(fallback_notes) < len(cached.get("source_notes", []))
+                        else "non-official fallback climate data"
+                    )
+                    cached["classification_correction"] = (
+                        "legacy cache relabeled because its source notes disclose fallback or proxy inputs"
+                    )
+                cached["cache_status"] = "cached"
+                cached["cache_age_days"] = round(age_days, 4)
                 return cached
             except Exception:
                 pass
@@ -832,26 +910,39 @@ def load_official_climate_data(force_refresh=False):
 
     fallback_temp, fallback_co2, fallback_disasters, fallback_costs = fallback_climate_maps()
     source_notes = []
+    source_status = {}
     try:
         temp_map = parse_nasa_gistemp(download_text(NASA_GISTEMP_CSV_URL, timeout=18))
+        if not temp_map:
+            raise ValueError("NASA GISTEMP returned no annual observations")
         source_notes.append("NASA GISTEMP land-ocean annual temperature anomaly")
+        source_status["temperature"] = "observed official"
     except Exception:
         temp_map = fallback_temp
         source_notes.append("fallback temperature proxy")
+        source_status["temperature"] = "calibrated proxy"
 
     try:
         co2_map = parse_noaa_co2(download_text(NOAA_CO2_CSV_URL, timeout=18))
+        if not co2_map:
+            raise ValueError("NOAA GML returned no CO2 observations")
         source_notes.append("NOAA GML Mauna Loa monthly CO2")
+        source_status["co2"] = "observed official"
     except Exception:
         co2_map = fallback_co2
         source_notes.append("fallback CO2 proxy")
+        source_status["co2"] = "calibrated proxy"
 
     try:
         disaster_map, cost_map = parse_ncei_disasters(download_text(NCEI_BILLION_EVENTS_JSON_URL, timeout=25))
+        if not disaster_map:
+            raise ValueError("NOAA NCEI returned no disaster observations")
         source_notes.append("NOAA NCEI billion-dollar weather and climate disasters")
+        source_status["disasters"] = "observed official"
     except Exception:
         disaster_map, cost_map = fallback_disasters, fallback_costs
         source_notes.append("fallback disaster-frequency proxy")
+        source_status["disasters"] = "calibrated proxy"
 
     years = sorted(set(temp_map) | set(co2_map) | set(disaster_map))
     rows = []
@@ -864,45 +955,101 @@ def load_official_climate_data(force_refresh=False):
             continue
         temp = temp_map.get(year)
         temp_year = year if temp is not None else last_temp_year
+        temperature_source = None
         if temp is None:
-            temp = last_temp if last_temp is not None else fallback_temp.get(year)
+            if source_status["temperature"] == "observed official" and last_temp is not None:
+                temp = last_temp
+                temperature_source = "official carry-forward"
+            else:
+                temp = fallback_temp.get(year)
+                temperature_source = "calibrated proxy" if temp is not None else "unavailable"
         else:
             last_temp = temp
             last_temp_year = year
-        co2 = co2_map.get(year)
-        co2_year = year if co2 is not None else last_co2_year
+            temperature_source = (
+                "official" if source_status["temperature"] == "observed official" else "calibrated proxy"
+            )
+        observed_co2 = co2_map.get(year)
+        co2 = observed_co2
+        co2_year = year if observed_co2 is not None else last_co2_year
+        co2_source = None
         if co2 is None:
-            co2 = last_co2 if last_co2 is not None else fallback_co2.get(year)
-        if co2 is not None:
-            last_co2 = co2
+            if source_status["co2"] == "observed official" and last_co2 is not None:
+                co2 = last_co2
+                co2_source = "official carry-forward"
+            else:
+                co2 = fallback_co2.get(year)
+                co2_source = "calibrated proxy" if co2 is not None else "unavailable"
+        if observed_co2 is not None:
+            last_co2 = observed_co2
             last_co2_year = year
+        if co2 is not None:
+            if co2_source is None:
+                co2_source = "official" if source_status["co2"] == "observed official" else "calibrated proxy"
         disasters = disaster_map.get(year)
         disaster_year = year if disasters is not None else None
-        if disasters is None and source_notes[-1].startswith("fallback"):
+        if disasters is None and source_status["disasters"] == "calibrated proxy":
             disasters = fallback_disasters.get(year, 0)
-            disaster_year = year
+            disaster_year = year if year in fallback_disasters else None
         cost = cost_map.get(year, fallback_costs.get(year, 0))
         if temp is None and co2 is None and not disasters:
             continue
+        disaster_source = (
+            "official"
+            if source_status["disasters"] == "observed official" and disaster_year == year
+            else ("calibrated proxy" if disaster_year == year else "unavailable")
+        )
+        complete_official = (
+            year < CURRENT_YEAR
+            and temperature_source == "official"
+            and co2_source == "official"
+            and disaster_source == "official"
+        )
+        field_sources = {temperature_source, co2_source, disaster_source}
+        row_source_class = (
+            "observed official"
+            if complete_official
+            else ("calibrated proxy" if field_sources == {"calibrated proxy"} else "mixed or incomplete")
+        )
         rows.append(
             {
                 "year": year,
-                "temperature_anomaly": round(safe_float(temp, 0), 3),
+                "temperature_anomaly": round(safe_float(temp, 0), 3) if temp is not None else None,
                 "temperature_year": temp_year,
-                "temperature_source": "official" if temp_year == year else "official carry-forward",
-                "co2_ppm": round(safe_float(co2, 0), 2),
+                "temperature_source": temperature_source,
+                "co2_ppm": round(safe_float(co2, 0), 2) if co2 is not None else None,
                 "co2_year": co2_year,
-                "co2_source": "official" if co2_year == year else "official carry-forward",
+                "co2_source": co2_source,
                 "billion_dollar_disasters": int(disasters) if disasters is not None else None,
                 "disaster_year": disaster_year,
-                "disaster_source": "official" if disaster_year == year else "not yet available",
-                "disaster_cost_proxy": round(safe_float(cost, 0), 2),
+                "disaster_source": disaster_source,
+                "disaster_cost_proxy": round(safe_float(cost, 0), 2) if cost is not None else None,
+                "source_class": row_source_class,
+                "is_complete_official_observation": complete_official,
+                "allowed_use": "decision input" if complete_official else "context only",
             }
         )
 
+    source_classes = set(source_status.values())
+    contains_non_official = any(
+        row.get(field) == "calibrated proxy"
+        for row in rows
+        for field in ("temperature_source", "co2_source", "disaster_source")
+    )
+    contains_incomplete = any(row.get("source_class") != "observed official" for row in rows)
+    if source_classes == {"observed official"} and not contains_incomplete:
+        source_mode = "official climate data"
+    elif source_classes == {"calibrated proxy"}:
+        source_mode = "non-official fallback climate data"
+    elif contains_non_official:
+        source_mode = "mixed official and non-official climate data"
+    else:
+        source_mode = "official-source climate data with incomplete observations"
     payload = {
-        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "source_mode": "official climate data",
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "release_id": f"climate-data-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "source_mode": source_mode,
+        "source_status": source_status,
         "source_notes": source_notes,
         "source_urls": {
             "nasa_gistemp": NASA_GISTEMP_CSV_URL,
@@ -921,33 +1068,47 @@ def load_official_climate_data(force_refresh=False):
 def climate_data_context():
     data = load_official_climate_data()
     rows = data.get("rows", [])
-    if not rows:
+    decision_rows = [
+        row
+        for row in rows
+        if row.get("is_complete_official_observation") is True
+        and int(row.get("year", CURRENT_YEAR)) < CURRENT_YEAR
+    ]
+    if not decision_rows:
         return {
-            "current_warming": CURRENT_WARMING_C,
-            "latest_year": CURRENT_YEAR,
-            "co2_ppm": 420.0,
-            "co2_10y_change": 20.0,
-            "disaster_10y_avg": 18.0,
-            "climate_pressure_multiplier": 1.0,
-            "source_mode": "fallback",
+            "current_warming": None,
+            "latest_year": None,
+            "co2_ppm": None,
+            "co2_10y_change": None,
+            "disaster_10y_avg": None,
+            "climate_pressure_multiplier": None,
+            "source_mode": data.get("source_mode", "climate data unavailable"),
+            "source_status": "not calculable — no complete official completed-year observation",
+            "source_notes": data.get("source_notes", []),
+            "source_urls": data.get("source_urls", {}),
         }
-    latest = rows[-1]
-    disaster_rows = [r for r in rows if r.get("billion_dollar_disasters") is not None]
-    recent = disaster_rows[-10:] if len(disaster_rows) >= 10 else disaster_rows
-    prior_idx = max(0, len(rows) - 11)
-    prior = rows[prior_idx]
+    latest = decision_rows[-1]
+    recent = decision_rows[-10:] if len(decision_rows) >= 10 else decision_rows
+    prior_idx = max(0, len(decision_rows) - 11)
+    prior = decision_rows[prior_idx]
     disaster_10y_avg = sum(r.get("billion_dollar_disasters", 0) for r in recent) / max(1, len(recent))
     co2_change = safe_float(latest.get("co2_ppm"), 0) - safe_float(prior.get("co2_ppm"), 0)
-    temp = safe_float(latest.get("temperature_anomaly"), CURRENT_WARMING_C)
-    multiplier = 1.0 + clamp((temp - 1.0) * 0.12, -0.04, 0.10) + clamp((co2_change - 20) * 0.004, -0.04, 0.08) + clamp((disaster_10y_avg - 15) * 0.01, -0.03, 0.08)
+    temp = safe_float(latest.get("temperature_anomaly"), 0.0)
+    multiplier = (
+        1.0
+        + clamp((temp - 1.0) * 0.12, -0.04, 0.10)
+        + clamp((disaster_10y_avg - 15) * 0.01, -0.03, 0.08)
+    )
     return {
         "current_warming": round(max(0.75, temp), 3),
-        "latest_year": latest.get("year", CURRENT_YEAR),
+        "latest_year": latest.get("year"),
         "co2_ppm": latest.get("co2_ppm", 0),
         "co2_10y_change": round(co2_change, 2),
         "disaster_10y_avg": round(disaster_10y_avg, 2),
         "climate_pressure_multiplier": round(clamp(multiplier, 0.85, 1.30), 4),
-        "source_mode": data.get("source_mode", "official climate data"),
+        "source_mode": "validated official completed-year observations",
+        "payload_source_mode": data.get("source_mode", "official climate data"),
+        "source_status": "available",
         "source_notes": data.get("source_notes", []),
         "source_urls": data.get("source_urls", {}),
     }
@@ -1095,7 +1256,19 @@ def read_cached_daily_climate_signal(max_age_hours=3):
         if age_hours <= max_age_hours:
             try:
                 cached = json.loads(DAILY_CLIMATE_CACHE.read_text(encoding="utf-8"))
+                cached["source_mode_original"] = cached.get("source_mode", "NWS active weather alerts")
                 cached["source_mode"] = "cached NWS active alerts"
+                cached["cache_status"] = "cached"
+                cached.setdefault("is_calculable", True)
+                cached.setdefault("observed_zero", safe_float(cached.get("climate_alerts"), 0.0) == 0)
+                cached.setdefault(
+                    "decision_status",
+                    (
+                        "observed zero — NWS feed successful, no matched climate alerts"
+                        if cached["observed_zero"]
+                        else "calculable — observed NWS active-alert severity"
+                    ),
+                )
                 return cached
             except Exception:
                 pass
@@ -1133,22 +1306,34 @@ def severity_weight(severity):
 
 
 def fallback_daily_climate_signal():
-    context = climate_data_context()
-    pressure = clamp((context["climate_pressure_multiplier"] - 0.90) / 0.40, 0.0, 1.0)
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "source_mode": "fallback daily climate pulse",
         "source_url": NWS_ACTIVE_ALERTS_URL,
-        "alerts_total": 0,
-        "climate_alerts": 0,
-        "weighted_alert_score": 0.0,
-        "daily_pressure": round(pressure, 4),
-        "allocation_pressure": round(pressure * 0.55, 4),
-        "top_driver": "long-run climate pressure",
-        "category_counts": {k: 0 for k in DAILY_ALERT_CATEGORY_WEIGHTS},
-        "category_intensity": {k: 0.0 for k in DAILY_ALERT_CATEGORY_WEIGHTS},
+        "alerts_total": None,
+        "climate_alerts": None,
+        "weighted_alert_score": None,
+        "daily_pressure": None,
+        "allocation_pressure": None,
+        "top_driver": "unavailable",
+        "is_calculable": False,
+        "observed_zero": False,
+        "decision_status": "not calculable — live NWS hazard data unavailable",
+        "category_counts": {},
+        "category_intensity": {},
         "sample_events": [],
     }
+
+
+def short_term_hazard_is_calculable(daily_signal):
+    if not isinstance(daily_signal, dict):
+        return False
+    explicit = daily_signal.get("is_calculable")
+    if explicit is not None:
+        return bool(explicit)
+    status = str(daily_signal.get("decision_status", "")).lower()
+    source_mode = str(daily_signal.get("source_mode", "")).lower()
+    return "not calculable" not in status and "fallback" not in source_mode
 
 
 def load_daily_climate_signal(force_refresh=False):
@@ -1196,13 +1381,24 @@ def load_daily_climate_signal(force_refresh=False):
 
         daily_pressure = clamp(math.log1p(weighted_score) / math.log1p(260), 0.0, 1.0)
         context = climate_data_context()
-        long_run_pressure = clamp((context["climate_pressure_multiplier"] - 0.90) / 0.40, 0.0, 1.0)
-        allocation_pressure = clamp(0.72 * daily_pressure + 0.28 * long_run_pressure, 0.0, 1.0)
+        multiplier = context.get("climate_pressure_multiplier")
+        long_run_available = multiplier is not None
+        long_run_pressure = (
+            clamp((safe_float(multiplier, 0.90) - 0.90) / 0.40, 0.0, 1.0)
+            if long_run_available
+            else None
+        )
+        allocation_pressure = (
+            clamp(0.72 * daily_pressure + 0.28 * long_run_pressure, 0.0, 1.0)
+            if long_run_pressure is not None
+            else daily_pressure
+        )
         top_driver = max(category_scores.items(), key=lambda kv: kv[1])[0] if weighted_score > 0 else "none"
         category_intensity = {
             k: round(clamp(v / max(1.0, weighted_score), 0.0, 1.0), 4)
             for k, v in category_scores.items()
         }
+        observed_zero = climate_alerts == 0
         payload = {
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "source_mode": "NWS active weather alerts",
@@ -1213,6 +1409,18 @@ def load_daily_climate_signal(force_refresh=False):
             "daily_pressure": round(daily_pressure, 4),
             "allocation_pressure": round(allocation_pressure, 4),
             "top_driver": top_driver,
+            "is_calculable": True,
+            "observed_zero": observed_zero,
+            "decision_status": (
+                "observed zero — NWS feed successful, no matched climate alerts"
+                if observed_zero
+                else "calculable — observed NWS active-alert severity"
+            ),
+            "long_run_context_status": (
+                "available"
+                if long_run_available
+                else "not calculable — long-run context excluded from live NWS pressure"
+            ),
             "category_counts": category_counts,
             "category_intensity": category_intensity,
             "sample_events": samples,
@@ -1283,7 +1491,7 @@ def apply_daily_climate_overlay(latest_alloc, daily_signal):
         out["daily_hazard_beta"] = round(hazard_beta, 4)
         out["daily_driver"] = (
             f"{daily_signal.get('top_driver', 'daily')} alert pulse; "
-            f"NWS pressure {event_pressure:.0%} x hazard beta {hazard_beta:.2f}; "
+            f"NWS pressure index {event_pressure * 100:.1f}/100 x hazard beta {hazard_beta:.2f}; "
             f"resilience {safe_float(SECTOR_ETFS.get(row['ticker'], {}).get('resilience'), 0.0):.2f}"
         )
         out["action"] = allocation_action(final_weight, safe_float(row.get("benchmark_weight"), 0.0))
@@ -1293,20 +1501,19 @@ def apply_daily_climate_overlay(latest_alloc, daily_signal):
 
 def climate_signal():
     official = load_official_climate_data()
-    source_rows = official.get("rows", [])
+    source_rows = [
+        row
+        for row in official.get("rows", [])
+        if row.get("is_complete_official_observation") is True
+        and 1980 <= int(row.get("year", 0)) < CURRENT_YEAR
+    ]
     if not source_rows:
-        years = [r[0] for r in CLIMATE_PROXY]
-        temps = [r[1] for r in CLIMATE_PROXY]
-        disasters = [r[2] for r in CLIMATE_PROXY]
-        co2 = [0 for _ in years]
-        costs = [0 for _ in years]
-    else:
-        source_rows = [r for r in source_rows if r.get("year", 0) >= 1980 and r.get("billion_dollar_disasters") is not None]
-        years = [r["year"] for r in source_rows]
-        temps = [r.get("temperature_anomaly", 0) for r in source_rows]
-        disasters = [r.get("billion_dollar_disasters", 0) for r in source_rows]
-        co2 = [r.get("co2_ppm", 0) for r in source_rows]
-        costs = [r.get("disaster_cost_proxy", 0) for r in source_rows]
+        return []
+    years = [r["year"] for r in source_rows]
+    temps = [r.get("temperature_anomaly", 0) for r in source_rows]
+    disasters = [r.get("billion_dollar_disasters", 0) for r in source_rows]
+    co2 = [r.get("co2_ppm", 0) for r in source_rows]
+    costs = [r.get("disaster_cost_proxy", 0) for r in source_rows]
     score = []
     rows = []
     for i, year in enumerate(years):
@@ -1314,7 +1521,9 @@ def climate_signal():
         disaster_z = expanding_zscore(disasters, i)
         co2_z = expanding_zscore(co2, i)
         cost_z = expanding_zscore(costs, i)
-        current_score = 0.40 * temperature_z + 0.20 * disaster_z + 0.25 * co2_z + 0.15 * cost_z
+        # Atmospheric CO2 remains context only. It is displayed for lineage but
+        # cannot directly drive the allocation regime or a transition score.
+        current_score = 0.55 * temperature_z + 0.25 * disaster_z + 0.20 * cost_z
         score.append(current_score)
         threshold = percentile(score, 0.75)
         state = "High Climate Risk" if current_score >= threshold else "Normal Climate Risk"
@@ -1471,7 +1680,7 @@ def climate_scenario_matrix(allocation_rows):
         "physical_model_risk_loss_floor": round(min(sensitivity_low_losses, default=0.0), 4),
         "physical_model_risk_loss_ceiling": round(max(sensitivity_high_losses, default=0.0), 4),
         "physical_model_risk_method": "Physical damage coefficients are rerun at 0.70x and 1.30x; this is a transparent sensitivity band, not a confidence interval.",
-        "climate_var_definition": "Climate VaR_s = [PV(reference FCFF) - PV(scenario FCFF)] / PV(reference FCFF), reported separately for each scenario",
+        "conditional_value_definition": "Conditional loss sensitivity = max(0, [PV(reference FCFF) - PV(scenario FCFF)] / PV(reference FCFF)); project-calibrated and not statistical VaR",
         "calculation_rule": "Each scenario uses the same country-to-sector-to-issuer cash-flow and DCF engine as Model Lab.",
     }
     return rows, summary
@@ -1694,11 +1903,20 @@ def climate_state_variables(daily_signal=None, context=None):
     )
     allocation_pressure = clamp(safe_float(daily_signal.get("allocation_pressure"), event_pressure), 0.0, 1.0)
     acute_hazard = event_pressure
-    chronic_state = clamp(
-        0.65 * clamp((safe_float(context.get("current_warming"), CURRENT_WARMING_C) - 0.75) / 0.85, 0, 1)
-        + 0.35 * clamp((safe_float(context.get("disaster_10y_avg"), 15) - 8) / 20, 0, 1),
-        0.0,
-        1.0,
+    chronic_available = (
+        context.get("current_warming") is not None
+        and context.get("disaster_10y_avg") is not None
+        and context.get("source_status") != "not calculable — no complete official completed-year observation"
+    )
+    chronic_state = (
+        clamp(
+            0.65 * clamp((safe_float(context.get("current_warming"), 0.0) - 0.75) / 0.85, 0, 1)
+            + 0.35 * clamp((safe_float(context.get("disaster_10y_avg"), 0.0) - 8) / 20, 0, 1),
+            0.0,
+            1.0,
+        )
+        if chronic_available
+        else 0.0
     )
     # No live macro-transition score is fabricated from atmospheric CO2. The
     # strategic scenario engine supplies transition pathways; current-state
@@ -1707,12 +1925,17 @@ def climate_state_variables(daily_signal=None, context=None):
     macro_transition = 0.0
     official_mode = str(context.get("source_mode", "")).lower()
     alert_mode = str(daily_signal.get("source_mode", "")).lower()
-    source_reliability = 0.95 if "official" in official_mode else 0.55
+    source_reliability = (
+        0.95
+        if official_mode == "validated official completed-year observations"
+        else (0.65 if "mixed" in official_mode else 0.35)
+    )
     alert_reliability = 0.95 if "nws active" in alert_mode else (0.85 if "cached nws" in alert_mode else 0.45)
     data_confidence = clamp(0.55 * source_reliability + 0.45 * alert_reliability, 0.35, 0.95)
     return {
         "acute_hazard_state": round(acute_hazard, 4),
         "chronic_climate_state": round(chronic_state, 4),
+        "chronic_data_status": "available" if chronic_available else "not calculable — verified chronic inputs unavailable",
         "macro_transition_state": round(macro_transition, 4),
         "macro_transition_status": "Scenario-only; live NGFS/EIA/EPA/SEC transition inputs not loaded",
         "daily_pressure": round(event_pressure, 4),
@@ -1722,7 +1945,7 @@ def climate_state_variables(daily_signal=None, context=None):
         "source_mode": daily_signal.get("source_mode", context.get("source_mode", "cached data")),
         "calculation": {
             "acute": "NWS severity-weighted event pressure only",
-            "chronic": "0.65 observed warming + 0.35 trailing disaster frequency; CO2 is contextual only",
+            "chronic": "0.65 observed warming + 0.35 trailing disaster frequency from complete official years; CO2 is contextual only",
             "transition": "Carbon cost + demand shift + energy cost + transition CapEx - pass-through; no CO2 concentration input",
             "confidence": "0.55 official-climate reliability + 0.45 NWS reliability",
         },
@@ -1755,7 +1978,786 @@ def realized_market_beta(asset_rows, benchmark_rows):
     return clamp(covariance / variance, 0.35, 2.25) if variance > 1e-12 else None
 
 
+def latest_official_treasury_rate(maturity="10y", releases_root=None):
+    """Return the latest governed Treasury par yield as a decimal rate."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    column = f"yield_{str(maturity).lower()}_pct"
+    candidates = []
+    for path in releases_root.glob("CFP-2026-003-*/processed/treasury_yield_curve_*.csv"):
+        release_dir = path.parents[1]
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            source = next(
+                row for row in manifest.get("source_entries", [])
+                if row.get("source_id") == "SRC-US-TREASURY" and row.get("processed_path", "").endswith(path.name)
+            )
+            with path.open(newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    rate_pct = safe_float(row.get(column), None)
+                    if rate_pct is None or not row.get("date"):
+                        continue
+                    candidates.append(
+                        {
+                            "rate": rate_pct / 100.0,
+                            "as_of": row["date"],
+                            "release_id": manifest.get("release_id", release_dir.name),
+                            "source_url": source.get("source_url"),
+                            "source_class": "observed official government rate",
+                        }
+                    )
+        except (OSError, ValueError, StopIteration, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {
+            "rate": None,
+            "as_of": None,
+            "release_id": None,
+            "source_url": None,
+            "source_class": "missing — dated Treasury release not loaded",
+        }
+    return max(candidates, key=lambda row: row["as_of"])
+
+
+def latest_official_ngfs_transition(releases_root=None):
+    """Load the newest hash-verified governed NGFS Phase 5.1 transition release."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    candidates = []
+    for path in releases_root.glob("CFP-2026-003-*/processed/ngfs_5_1_transition_*_to_*.csv"):
+        release_dir = path.parents[1]
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            source = next(
+                row for row in manifest.get("source_entries", [])
+                if row.get("source_id") == "SRC-NGFS-PHASE-5-1-TRANSITION"
+                and row.get("processed_path", "").endswith(path.name)
+            )
+            expected_hash = source.get("processed_sha256")
+            actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            if not expected_hash or actual_hash != expected_hash:
+                continue
+            with path.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            if not rows:
+                continue
+            candidates.append(
+                {
+                    "is_loaded": True,
+                    "release_id": manifest.get("release_id", release_dir.name),
+                    "source_release": source.get("source_vintage"),
+                    "source_release_date": source.get("source_release_date"),
+                    "source_url": source.get("source_url"),
+                    "region": source.get("region"),
+                    "variables": source.get("variables") or [],
+                    "models": source.get("models") or [],
+                    "scenarios": source.get("scenarios") or [],
+                    "rows": rows,
+                    "processed_sha256": actual_hash,
+                    "physical_damage_status": "excluded — affected Phase 5 physical-damage variables are not used",
+                }
+            )
+        except (OSError, ValueError, StopIteration, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {
+            "is_loaded": False,
+            "release_id": None,
+            "source_release": None,
+            "source_release_date": None,
+            "source_url": NGFS_SCENARIOS_URL,
+            "region": None,
+            "variables": [],
+            "models": [],
+            "scenarios": [],
+            "rows": [],
+            "physical_damage_status": "not evaluated",
+        }
+    return max(candidates, key=lambda row: governed_release_sort_key(row["release_id"]))
+
+
+def latest_official_sec_financial_history(releases_root=None):
+    """Load the newest hash-verified governed SEC financial-history release."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    candidates = []
+    for release_dir in releases_root.glob("CFP-2026-003-*"):
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            history = manifest.get("sec_financial_history") or {}
+            fact_rel = history.get("processed_fact_path")
+            coverage_rel = history.get("coverage_path")
+            fact_path = PROJECT_DIR / fact_rel if fact_rel else None
+            coverage_path = PROJECT_DIR / coverage_rel if coverage_rel else None
+            if not fact_path or not coverage_path or not fact_path.exists() or not coverage_path.exists():
+                continue
+            fact_hash = hashlib.sha256(fact_path.read_bytes()).hexdigest()
+            coverage_hash = hashlib.sha256(coverage_path.read_bytes()).hexdigest()
+            if fact_hash != history.get("processed_fact_sha256"):
+                continue
+            if coverage_hash != history.get("coverage_sha256"):
+                continue
+            with coverage_path.open(newline="", encoding="utf-8") as handle:
+                coverage_rows = list(csv.DictReader(handle))
+            if not coverage_rows:
+                continue
+            candidates.append(
+                {
+                    "is_loaded": True,
+                    "release_id": manifest.get("release_id", release_dir.name),
+                    "start_period": history.get("start_period"),
+                    "end_period": history.get("end_period"),
+                    "quarter_count": int(history.get("quarter_count") or 0),
+                    "fact_count": int(history.get("fact_count") or 0),
+                    "filing_count": int(history.get("filing_count") or 0),
+                    "tickers": history.get("tickers") or [],
+                    "raw_source_release_id": history.get("raw_source_release_id"),
+                    "coverage_rows": coverage_rows,
+                    "processed_fact_sha256": fact_hash,
+                    "coverage_sha256": coverage_hash,
+                    "status": "official issuer-filed history loaded; accounting and FCFF tie-out pending",
+                }
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {
+            "is_loaded": False,
+            "release_id": None,
+            "start_period": None,
+            "end_period": None,
+            "quarter_count": 0,
+            "fact_count": 0,
+            "filing_count": 0,
+            "tickers": [],
+            "coverage_rows": [],
+            "status": "official SEC financial history not loaded",
+        }
+    return max(candidates, key=lambda row: governed_release_sort_key(row["release_id"]))
+
+
+def latest_governed_duke_pilot(releases_root=None):
+    """Load the newest DUK pilot only when every processed file matches its hash."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    candidates = []
+    for release_dir in releases_root.glob("CFP-2026-003-*"):
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            pilot = manifest.get("duk_pilot") or {}
+            hashes = pilot.get("processed_sha256") or {}
+            if pilot.get("ticker") != "DUK" or not hashes:
+                continue
+            loaded = {}
+            valid = True
+            for relative, expected_hash in hashes.items():
+                path = PROJECT_DIR / relative
+                if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+                    valid = False
+                    break
+                with path.open(newline="", encoding="utf-8") as handle:
+                    loaded[path.name] = list(csv.DictReader(handle))
+            if not valid:
+                continue
+            facilities = loaded.get("duk_epa_facility_emissions_2023.csv", [])
+            physical = loaded.get("duk_facility_fema_context_2025.csv", [])
+            candidates.append({
+                "is_loaded": True,
+                "release_id": manifest.get("release_id", release_dir.name),
+                "epa_year": pilot.get("epa_year"),
+                "parent_records": int(pilot.get("parent_records") or 0),
+                "direct_emitter_matches": int(pilot.get("direct_emitter_matches") or 0),
+                "coordinate_matches": int(pilot.get("coordinate_matches") or 0),
+                "fema_county_matches": sum(row.get("hazard_match_status", "").startswith("matched") for row in physical),
+                "ownership_adjusted_nonbiogenic_co2_tonnes": safe_float(pilot.get("ownership_adjusted_nonbiogenic_co2_tonnes"), None),
+                "fcff_bridge": (loaded.get("duk_sec_fcff_bridge_2025.csv") or [{}])[0],
+                "carbon_sensitivity": (loaded.get("duk_carbon_price_sensitivity.csv") or [{}])[0],
+                "facility_rows": facilities,
+                "physical_rows": physical,
+                "physical_financial_status": pilot.get("physical_financial_status"),
+                "valuation_status": pilot.get("valuation_status"),
+                "sec_source_release_id": pilot.get("sec_source_release_id"),
+                "ngfs_source_release_id": pilot.get("ngfs_source_release_id"),
+                "processed_sha256": hashes,
+            })
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {
+            "is_loaded": False, "release_id": None, "parent_records": 0,
+            "direct_emitter_matches": 0, "coordinate_matches": 0,
+            "fema_county_matches": 0, "facility_rows": [], "physical_rows": [],
+            "physical_financial_status": "not calculable",
+            "valuation_status": "not calculable",
+        }
+    return max(candidates, key=lambda row: governed_release_sort_key(row["release_id"]))
+
+
+def latest_eight_issuer_demo(releases_root=None):
+    """Load the newest hash-verified eight-issuer demo screen."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    candidates = []
+    for release_dir in releases_root.glob("CFP-2026-003-*"):
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            demo = manifest.get("eight_issuer_demo") or {}
+            relative = demo.get("processed_path")
+            path = PROJECT_DIR / relative if relative else None
+            if not path or not path.exists():
+                continue
+            actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual_hash != demo.get("processed_sha256"):
+                continue
+            with path.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            if len(rows) != 8:
+                continue
+            candidates.append({
+                "is_loaded": True,
+                "release_id": manifest.get("release_id", release_dir.name),
+                "fcf_definition": demo.get("fcf_definition"),
+                "rows": rows,
+                "processed_sha256": actual_hash,
+            })
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {"is_loaded": False, "release_id": None, "rows": []}
+    return max(candidates, key=lambda row: governed_release_sort_key(row["release_id"]))
+
+
+def latest_eight_issuer_public_evidence(releases_root=None):
+    """Load the newest hash-verified eight-issuer public-evidence release."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    candidates = []
+    for release_dir in releases_root.glob("CFP-2026-003-*"):
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            evidence = manifest.get("eight_issuer_public_evidence") or {}
+            hashes = evidence.get("processed_sha256") or {}
+            if len(evidence.get("tickers") or []) != 8 or not hashes:
+                continue
+            loaded, valid = {}, True
+            for relative, expected_hash in hashes.items():
+                path = PROJECT_DIR / relative
+                if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+                    valid = False
+                    break
+                with path.open(newline="", encoding="utf-8") as handle:
+                    loaded[path.name] = list(csv.DictReader(handle))
+            if not valid:
+                continue
+            scope_rows = loaded.get("eight_issuer_reported_scope1.csv", [])
+            physical_rows = loaded.get("eight_issuer_physical_exposure_summary.csv", [])
+            transmission_rows = loaded.get("eight_issuer_financial_transmission_evidence.csv", [])
+            if not all(len(rows) == 8 for rows in (scope_rows, physical_rows, transmission_rows)):
+                continue
+            candidates.append({
+                "is_loaded": True,
+                "release_id": manifest.get("release_id", release_dir.name),
+                "scope1_rows": scope_rows,
+                "physical_rows": physical_rows,
+                "transmission_rows": transmission_rows,
+                "facility_rows": loaded.get("eight_issuer_epa_facilities_2023.csv", []),
+                "hazard_rows": loaded.get("eight_issuer_fema_context_2025.csv", []),
+                "processed_sha256": hashes,
+                "allowed_use": evidence.get("allowed_use"),
+            })
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {"is_loaded": False, "release_id": None, "scope1_rows": [], "physical_rows": [], "transmission_rows": []}
+    return max(candidates, key=lambda row: governed_release_sort_key(row["release_id"]))
+
+
+def latest_eight_issuer_valuation_inputs(releases_root=None):
+    """Load the newest hash-verified observed/assumed valuation input release."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    candidates = []
+    for release_dir in releases_root.glob("CFP-2026-003-R14-*"):
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            hashes = manifest.get("sha256") or {}
+            loaded, valid = {}, True
+            for relative, expected_hash in hashes.items():
+                path = PROJECT_DIR / relative
+                if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+                    valid = False
+                    break
+                if path.suffix == ".csv" and path.parent.name == "processed":
+                    with path.open(newline="", encoding="utf-8") as handle:
+                        loaded[path.name] = list(csv.DictReader(handle))
+            inputs = loaded.get("eight_issuer_valuation_inputs_2025.csv", [])
+            assumptions = loaded.get("eight_issuer_model_assumptions.csv", [])
+            if not valid or len(inputs) != 8 or len(assumptions) != 24:
+                continue
+            candidates.append({
+                "is_loaded": True,
+                "release_id": manifest.get("release_id", release_dir.name),
+                "inputs": inputs,
+                "assumptions": assumptions,
+                "status": manifest.get("status"),
+                "valuation_rule": manifest.get("valuation_rule"),
+                "source_entries": manifest.get("source_entries") or [],
+            })
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {"is_loaded": False, "release_id": None, "inputs": [], "assumptions": []}
+    return max(candidates, key=lambda row: governed_release_sort_key(row["release_id"]))
+
+
+def latest_eight_issuer_climate_evidence(releases_root=None):
+    """Load the newest hash-verified Scope 1/2/3, SEC, FEMA EAL and CIE release."""
+    releases_root = Path(releases_root) if releases_root else DATA_DIR / "releases"
+    candidates = []
+    for release_dir in releases_root.glob("CFP-2026-003-R*-*"):
+        manifest_path = release_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            evidence = manifest.get("climate_evidence") or {}
+            hashes = manifest.get("sha256") or {}
+            if not evidence.get("processed_paths") or not hashes:
+                continue
+            loaded, valid = {}, True
+            for relative in evidence["processed_paths"]:
+                expected = hashes.get(relative)
+                path = PROJECT_DIR / relative
+                if not expected or not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                    valid = False
+                    break
+                with path.open(newline="", encoding="utf-8") as handle:
+                    loaded[path.name] = list(csv.DictReader(handle))
+            if not valid:
+                continue
+            scopes = loaded.get("eight_issuer_scope123_2024.csv", [])
+            ppe = loaded.get("eight_issuer_sec_ppe_2025.csv", [])
+            physical = loaded.get("eight_issuer_fema_eal_summary.csv", [])
+            assumptions = loaded.get("eight_issuer_r15_model_assumptions.csv", [])
+            if not (len(scopes) == len(ppe) == len(physical) == 8 and len(assumptions) == 24):
+                continue
+            candidates.append({
+                "is_loaded": True,
+                "release_id": manifest.get("release_id", release_dir.name),
+                "scope_rows": scopes,
+                "ppe_rows": ppe,
+                "physical_rows": physical,
+                "cie_rows": loaded.get("ngfs_cie_usa_labour_productivity_2025_2050.csv", []),
+                "assumptions": assumptions,
+                "source_entries": manifest.get("source_entries") or [],
+            })
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return {"is_loaded": False, "release_id": None, "scope_rows": [], "ppe_rows": [], "physical_rows": [], "cie_rows": [], "assumptions": []}
+    return max(candidates, key=lambda row: governed_release_sort_key(row["release_id"]))
+
+
+def official_ngfs_transition_pathway(scenario_key, horizon, release=None):
+    """Summarize official transition variables without inventing issuer exposure."""
+    release = release or latest_official_ngfs_transition()
+    horizon = int(horizon)
+    if scenario_key == "baseline":
+        return {
+            "scenario_key": "baseline",
+            "scenario": "Climate-agnostic analytical reference",
+            "is_official_scenario": False,
+            "year": horizon,
+            "carbon_price_median": 0.0,
+            "carbon_price_min": 0.0,
+            "carbon_price_max": 0.0,
+            "carbon_price_unit": "US$2010/t CO2",
+            "industry_energy": {},
+            "status": "analytical zero-carbon-price reference; not an NGFS scenario",
+        }
+    scenario = NGFS_SCENARIO_LABELS.get(scenario_key)
+    if not release.get("is_loaded") or not scenario:
+        return {
+            "scenario_key": scenario_key,
+            "scenario": scenario,
+            "is_official_scenario": False,
+            "year": horizon,
+            "carbon_price_median": None,
+            "carbon_price_min": None,
+            "carbon_price_max": None,
+            "carbon_price_unit": None,
+            "industry_energy": {},
+            "status": "official NGFS transition pathway not available",
+        }
+    rows = [
+        row for row in release["rows"]
+        if row.get("scenario") == scenario and int(safe_float(row.get("year"), 0)) == horizon
+    ]
+    carbon_rows = [row for row in rows if row.get("variable") == "Price|Carbon"]
+    carbon_values = [safe_float(row.get("value"), None) for row in carbon_rows]
+    carbon_values = [value for value in carbon_values if value is not None]
+    energy = {}
+    for variable in (
+        "Final Energy|Industry",
+        "Final Energy|Industry|Electricity",
+        "Final Energy|Industry|Gases",
+        "Final Energy|Industry|Liquids",
+        "Final Energy|Industry|Solids",
+    ):
+        values = [
+            safe_float(row.get("value"), None)
+            for row in rows
+            if row.get("variable") == variable
+        ]
+        values = [value for value in values if value is not None]
+        if values:
+            energy[variable] = {
+                "median": round(statistics.median(values), 6),
+                "min": round(min(values), 6),
+                "max": round(max(values), 6),
+                "unit": next(row.get("unit") for row in rows if row.get("variable") == variable),
+                "model_count": len(values),
+            }
+    return {
+        "scenario_key": scenario_key,
+        "scenario": scenario,
+        "is_official_scenario": bool(carbon_values),
+        "year": horizon,
+        "carbon_price_median": round(statistics.median(carbon_values), 6) if carbon_values else None,
+        "carbon_price_min": round(min(carbon_values), 6) if carbon_values else None,
+        "carbon_price_max": round(max(carbon_values), 6) if carbon_values else None,
+        "carbon_price_unit": carbon_rows[0].get("unit") if carbon_rows else None,
+        "industry_energy": energy,
+        "model_count": len(carbon_values),
+        "status": (
+            f"official NGFS {release['source_release']} transition pathway; "
+            "model range is not a probability interval"
+            if carbon_values
+            else "official release loaded but selected pathway/year is missing"
+        ),
+        "release_id": release.get("release_id"),
+        "source_release": release.get("source_release"),
+        "source_release_date": release.get("source_release_date"),
+        "source_url": release.get("source_url"),
+        "region": release.get("region"),
+        "physical_damage_status": release.get("physical_damage_status"),
+    }
+
+
+def annual_ngfs_carbon_price_path(scenario_key, horizon, release=None):
+    """Interpolate the official five-year NGFS price grid to annual values."""
+    horizon = int(horizon)
+    if scenario_key == "baseline":
+        return {year: 0.0 for year in range(2025, horizon + 1)}
+    points = {}
+    for year in (2025, 2030, 2035, 2040, 2045, 2050):
+        if year > horizon and points:
+            break
+        row = official_ngfs_transition_pathway(scenario_key, year, release=release)
+        value = safe_float(row.get("carbon_price_median"), None)
+        if value is not None:
+            points[year] = value
+    if not points:
+        return {year: 0.0 for year in range(2025, horizon + 1)}
+    years = sorted(points)
+    path = {}
+    for year in range(2025, horizon + 1):
+        if year <= years[0]:
+            path[year] = points[years[0]]
+            continue
+        if year >= years[-1]:
+            path[year] = points[years[-1]]
+            continue
+        right = next(item for item in years if item >= year)
+        left = max(item for item in years if item <= year)
+        if right == left:
+            path[year] = points[left]
+        else:
+            fraction = (year - left) / (right - left)
+            path[year] = points[left] + fraction * (points[right] - points[left])
+    return path
+
+
+def issuer_prototype_valuation(
+    ticker,
+    target_key,
+    reference_key,
+    horizon,
+    assumption_case,
+    scope1_row,
+    physical_row,
+    valuation_release,
+    ngfs_release=None,
+    climate_evidence=None,
+):
+    """Calculate an assumption-enabled annual FCFF/DCF scenario comparison.
+
+    Observed inputs and model assumptions are returned separately.  A zero
+    cash-flow floor prevents an assumption stress from creating a negative
+    enterprise value; Shapley attribution preserves exact reconciliation.
+    """
+    symbol = yahoo_symbol(ticker)
+    case = assumption_case if assumption_case in {"low", "base", "high"} else "base"
+    input_row = next((row for row in valuation_release.get("inputs", []) if row.get("ticker") == symbol), None)
+    assumption = next((row for row in valuation_release.get("assumptions", []) if row.get("ticker") == symbol and row.get("case") == case), None)
+    if not input_row or not assumption:
+        return {"is_calculable": False, "status": "Valuation input release is incomplete"}
+
+    horizon = int(horizon)
+    years = list(range(2026, horizon + 1))
+    base_year = 2025
+    base_fcff = safe_float(input_row.get("normalized_fcff_usd"), None)
+    wacc = safe_float(input_row.get("wacc"), None)
+    growth = safe_float(input_row.get("terminal_growth"), None)
+    climate_evidence = climate_evidence or {}
+    enhanced_scope = next((row for row in climate_evidence.get("scope_rows", []) if row.get("ticker") == symbol), {})
+    enhanced_physical = next((row for row in climate_evidence.get("physical_rows", []) if row.get("ticker") == symbol), {})
+    enhanced_ppe = next((row for row in climate_evidence.get("ppe_rows", []) if row.get("ticker") == symbol), {})
+    enhanced_assumption = next((row for row in climate_evidence.get("assumptions", []) if row.get("ticker") == symbol and row.get("case") == case), {})
+    tonnes = safe_float(enhanced_scope.get("scope1_tco2e"), safe_float(scope1_row.get("scope1_tco2e"), None))
+    scope2_tonnes = safe_float(enhanced_scope.get("scope2_market_tco2e"), 0.0)
+    scope3_tonnes = safe_float(enhanced_scope.get("scope3_tco2e"), 0.0)
+    if base_fcff is None or base_fcff <= 0 or wacc is None or growth is None or wacc <= growth or tonnes is None:
+        return {"is_calculable": False, "status": "Positive normalized FCFF, emissions, or valid WACC/g is missing"}
+
+    target_price = annual_ngfs_carbon_price_path(target_key, horizon, release=ngfs_release)
+    reference_price = annual_ngfs_carbon_price_path(reference_key, horizon, release=ngfs_release)
+    coverage = safe_float(enhanced_assumption.get("scope1_policy_coverage"), safe_float(assumption.get("policy_coverage"), 0.75))
+    pass_through = safe_float(enhanced_assumption.get("direct_cost_pass_through"), safe_float(assumption.get("pass_through"), 0.50))
+    scope2_incidence = safe_float(enhanced_assumption.get("scope2_cost_incidence"), 0.50)
+    scope3_incidence = safe_float(enhanced_assumption.get("scope3_value_chain_incidence"), 0.01)
+    emissions_decline = safe_float(enhanced_assumption.get("annual_emissions_decline"), safe_float(assumption.get("annual_emissions_decline"), 0.03))
+    covered_ppe_share = safe_float(enhanced_assumption.get("covered_ppe_share"), 0.30)
+    recovery = safe_float(enhanced_assumption.get("insurance_adaptation_recovery"), 0.50)
+    labour_share = safe_float(enhanced_assumption.get("labour_cost_share"), 0.10)
+    labour_conversion = safe_float(enhanced_assumption.get("labour_productivity_to_fcff"), 0.25)
+    macro_elasticity = safe_float(enhanced_assumption.get("macro_cashflow_elasticity"), safe_float(assumption.get("macro_cashflow_elasticity"), 0.60))
+    net_ppe = safe_float(enhanced_ppe.get("net_ppe_usd"), None)
+    operating_cash_flow = safe_float(input_row.get("operating_cash_flow_usd"), None)
+    capital_expenditure = safe_float(input_row.get("capital_expenditure_usd"), None)
+    capex_to_cfo = (
+        capital_expenditure / operating_cash_flow
+        if operating_cash_flow not in (None, 0.0) and capital_expenditure is not None
+        else None
+    )
+    macro_dependency_scale = clamp(0.50 + safe_float(capex_to_cfo, 0.50), 0.50, 2.00)
+    eal_rate = safe_float(enhanced_physical.get("emissions_weighted_building_eal_rate"), None)
+    eal_source = "Issuer EPA facilities × FEMA county building EAL rate"
+    if eal_rate is None:
+        observed_eal = [
+            safe_float(row.get("emissions_weighted_building_eal_rate"), None)
+            for row in climate_evidence.get("physical_rows", [])
+        ]
+        observed_eal = sorted(value for value in observed_eal if value is not None)
+        if observed_eal:
+            middle = len(observed_eal) // 2
+            eal_rate = observed_eal[middle] if len(observed_eal) % 2 else (observed_eal[middle - 1] + observed_eal[middle]) / 2.0
+            eal_source = "Eight-issuer observed FEMA EAL median fallback"
+
+    cie_by_scenario = {}
+    for row in climate_evidence.get("cie_rows", []):
+        cie_by_scenario.setdefault(row.get("scenario_key"), {})[int(safe_float(row.get("year"), 0))] = safe_float(row.get("median_loss_pct"), 0.0) / 100.0
+
+    def cie_path(scenario_key):
+        if scenario_key == "baseline":
+            return {year: 0.0 for year in years}
+        source = cie_by_scenario.get(scenario_key) or cie_by_scenario.get("current_policies") or {}
+        points = sorted(source)
+        if not points:
+            return {year: 0.0 for year in years}
+        path = {}
+        for year in years:
+            if year <= points[0]:
+                path[year] = source[points[0]]
+            elif year >= points[-1]:
+                path[year] = source[points[-1]]
+            else:
+                right = next(point for point in points if point >= year)
+                left = max(point for point in points if point <= year)
+                fraction = 0.0 if right == left else (year - left) / (right - left)
+                path[year] = source[left] + fraction * (source[right] - source[left])
+        return path
+
+    acute_factor = {
+        "baseline": 0.00, "net_zero_2050": 0.60, "below_2c": 0.70,
+        "delayed_transition": 0.85, "current_policies": 1.00,
+        "fragmented_world": 1.15,
+    }
+
+    target_scenario = CLIMATE_SCENARIO_PATHS.get(target_key, CLIMATE_SCENARIO_PATHS["current_policies"])
+    reference_scenario = CLIMATE_SCENARIO_PATHS.get(reference_key, CLIMATE_SCENARIO_PATHS["baseline"])
+
+    def absolute_components(scenario_key, scenario, price_path):
+        macro_terminal = (
+            safe_float(scenario.get("country_gdp_loss_2050"), 0.0)
+            + safe_float(scenario.get("supply_chain_shock_2050"), 0.0)
+        )
+        components = {"transition": {}, "physical": {}, "macro_supply": {}}
+        detail = {"scope1": {}, "scope2": {}, "scope3": {}, "acute": {}, "chronic": {}}
+        chronic_path = cie_path(scenario_key)
+        for year in years:
+            elapsed = year - base_year
+            ramp = elapsed / max(1, horizon - base_year)
+            baseline = base_fcff * ((1.0 + growth) ** elapsed)
+            decline = (1.0 - emissions_decline) ** elapsed
+            carbon_price = safe_float(price_path.get(year), 0.0)
+            detail["scope1"][year] = max(0.0, tonnes * decline * carbon_price * coverage * (1.0 - pass_through))
+            detail["scope2"][year] = max(0.0, scope2_tonnes * decline * carbon_price * coverage * scope2_incidence * (1.0 - pass_through))
+            detail["scope3"][year] = max(0.0, scope3_tonnes * decline * carbon_price * scope3_incidence * (1.0 - pass_through))
+            components["transition"][year] = sum(detail[name][year] for name in ("scope1", "scope2", "scope3"))
+            detail["acute"][year] = max(
+                0.0, (net_ppe or 0.0) * covered_ppe_share * (eal_rate or 0.0)
+                * (1.0 - recovery) * acute_factor.get(scenario_key, 1.0) * ramp,
+            )
+            detail["chronic"][year] = max(
+                0.0, baseline * labour_share * labour_conversion * safe_float(chronic_path.get(year), 0.0),
+            )
+            components["physical"][year] = detail["acute"][year] + detail["chronic"][year]
+            components["macro_supply"][year] = max(
+                0.0,
+                baseline * macro_terminal * macro_elasticity * macro_dependency_scale * ramp,
+            )
+        components["detail"] = detail
+        return components
+
+    target_components = absolute_components(target_key, target_scenario, target_price)
+    reference_components = absolute_components(reference_key, reference_scenario, reference_price)
+    names = ("transition", "physical", "macro_supply")
+
+    def value_for(coalition):
+        cashflows = []
+        for year in years:
+            elapsed = year - base_year
+            baseline = base_fcff * ((1.0 + growth) ** elapsed)
+            losses = sum(
+                (target_components[name] if name in coalition else reference_components[name])[year]
+                for name in names
+            )
+            cashflows.append(max(0.0, baseline - losses))
+        pv = sum(cashflow / ((1.0 + wacc) ** (index + 1)) for index, cashflow in enumerate(cashflows))
+        terminal = cashflows[-1] * (1.0 + growth) / (wacc - growth)
+        return pv + terminal / ((1.0 + wacc) ** len(years)), cashflows
+
+    coalition_values = {}
+    for mask in range(1 << len(names)):
+        coalition = frozenset(names[index] for index in range(len(names)) if mask & (1 << index))
+        coalition_values[coalition] = value_for(coalition)[0]
+    reference_value = coalition_values[frozenset()]
+    target_value, target_cashflows = value_for(frozenset(names))
+    reference_cashflows = value_for(frozenset())[1]
+    shapley = {}
+    n = len(names)
+    for name in names:
+        others = [item for item in names if item != name]
+        contribution = 0.0
+        for mask in range(1 << len(others)):
+            coalition = frozenset(others[index] for index in range(len(others)) if mask & (1 << index))
+            weight = math.factorial(len(coalition)) * math.factorial(n - len(coalition) - 1) / math.factorial(n)
+            contribution += weight * (coalition_values[coalition | {name}] - coalition_values[coalition])
+        shapley[name] = contribution / reference_value
+
+    value_impact = target_value / reference_value - 1.0
+    last_year = years[-1]
+    channel_rows = []
+    for name, label in (("transition", "Transition"), ("physical", "Physical"), ("macro_supply", "Macro / supply")):
+        amount = target_components[name][last_year] - reference_components[name][last_year]
+        channel_rows.append({
+            "key": name,
+            "label": label,
+            "terminal_cash_flow_delta_usd": amount,
+            "terminal_cash_flow_delta_rate": amount / (base_fcff * ((1.0 + growth) ** (last_year - base_year))),
+            "value_contribution": shapley[name],
+            "classification": "Modeled estimate using observed inputs + disclosed assumptions",
+        })
+
+    observed = {
+        "normalized_fcff_usd": base_fcff,
+        "fcff_status": input_row.get("fcff_status"),
+        "reported_free_cash_flow_usd": safe_float(input_row.get("reported_free_cash_flow_usd"), None),
+        "scope1_tco2e": tonnes,
+        "scope2_tco2e": scope2_tonnes,
+        "scope3_tco2e": scope3_tonnes,
+        "scope3_boundary": enhanced_scope.get("scope3_boundary"),
+        "scope1_year": int(safe_float(enhanced_scope.get("reporting_year"), safe_float(scope1_row.get("reporting_year"), 0))),
+        "net_ppe_usd": net_ppe,
+        "operating_cash_flow_usd": operating_cash_flow,
+        "capital_expenditure_usd": capital_expenditure,
+        "capex_to_operating_cash_flow": capex_to_cfo,
+        "ppe_period_end": enhanced_ppe.get("ppe_period_end"),
+        "fema_building_eal_rate": eal_rate,
+        "fema_eal_source": eal_source,
+        "fema_matches": int(safe_float(enhanced_physical.get("fema_eal_matches"), 0)),
+        "cie_terminal_labour_loss_target": cie_path(target_key).get(last_year, 0.0),
+        "cie_terminal_labour_loss_reference": cie_path(reference_key).get(last_year, 0.0),
+        "beta": safe_float(input_row.get("five_year_monthly_beta"), None),
+        "beta_observations": int(safe_float(input_row.get("beta_observations"), 0)),
+        "market_cap_usd": safe_float(input_row.get("market_cap_usd"), None),
+        "debt_usd": safe_float(input_row.get("debt_usd"), None),
+        "tax_rate": safe_float(input_row.get("effective_tax_rate"), None),
+        "risk_free_rate": safe_float(input_row.get("risk_free_rate"), None),
+        "risk_free_as_of": input_row.get("risk_free_as_of"),
+        "wacc": wacc,
+    }
+    assumptions = {
+        "case": case,
+        "policy_coverage": coverage,
+        "pass_through": pass_through,
+        "scope2_cost_incidence": scope2_incidence,
+        "scope3_value_chain_incidence": scope3_incidence,
+        "annual_emissions_decline": emissions_decline,
+        "covered_ppe_share": covered_ppe_share,
+        "insurance_adaptation_recovery": recovery,
+        "labour_cost_share": labour_share,
+        "labour_productivity_to_fcff": labour_conversion,
+        "acute_scenario_factor": acute_factor.get(target_key, 1.0),
+        "macro_cashflow_elasticity": macro_elasticity,
+        "macro_dependency_scale": macro_dependency_scale,
+        "macro_dependency_rule": "0.50 + SEC CapEx / CFO, bounded to [0.50, 2.00]",
+        "equity_risk_premium": safe_float(input_row.get("equity_risk_premium"), None),
+        "terminal_growth": growth,
+        "cash_flow_floor": "zero",
+    }
+    terminal_detail = {
+        key: target_components["detail"][key][last_year] - reference_components["detail"][key][last_year]
+        for key in ("scope1", "scope2", "scope3", "acute", "chronic")
+    }
+    return {
+        "is_calculable": True,
+        "release_id": climate_evidence.get("release_id") or valuation_release.get("release_id"),
+        "assumption_case": case,
+        "value_impact": value_impact,
+        "reference_enterprise_value_usd": reference_value,
+        "target_enterprise_value_usd": target_value,
+        "reference_terminal_fcff_usd": reference_cashflows[-1],
+        "target_terminal_fcff_usd": target_cashflows[-1],
+        "terminal_fcff_delta_usd": target_cashflows[-1] - reference_cashflows[-1],
+        "channels": channel_rows,
+        "terminal_component_detail": terminal_detail,
+        "attribution_residual": value_impact - sum(shapley.values()),
+        "observed_inputs": observed,
+        "model_assumptions": assumptions,
+        "wacc": wacc,
+        "terminal_growth": growth,
+        "status": "Prototype DCF completed with reported Scope 1/2/3, SEC PP&E, FEMA expected annual loss rates, NGFS/CIE pathways, and disclosed Low/Base/High financial-conversion assumptions; issuer facility exposure is not fully verified; no automatic trade, audited valuation, price target, forecast return, or probability",
+    }
+
+
 def valuation_assumptions(ticker, sector, observed_beta=None):
+    symbol = yahoo_symbol(ticker or "")
     if sector == "Economy":
         sector = "Industrials"
         quality = "Country valuation calibration"
@@ -1763,36 +2765,61 @@ def valuation_assumptions(ticker, sector, observed_beta=None):
         sector = normalize_model_sector(sector)
         quality = "Observed market beta + sector capital-structure fallback" if observed_beta is not None else "Sector beta and capital-structure fallback"
     fallback = SECTOR_VALUATION_ASSUMPTIONS[sector]
+    treasury = latest_official_treasury_rate("10y")
+    risk_free_rate = safe_float(treasury.get("rate"), RISK_FREE_RATE)
     beta = clamp(safe_float(observed_beta, fallback["equity_beta"]), 0.35, 2.25)
     debt_ratio = clamp(safe_float(fallback.get("debt_ratio"), 0.30), 0.0, 0.75)
-    cost_of_equity = RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
+    cost_of_equity = risk_free_rate + beta * EQUITY_RISK_PREMIUM
     after_tax_debt = PRETAX_COST_OF_DEBT * (1 - US_CORPORATE_TAX_RATE)
     wacc = (1 - debt_ratio) * cost_of_equity + debt_ratio * after_tax_debt
     terminal_growth = clamp(safe_float(fallback.get("terminal_growth"), 0.021), -0.01, wacc - 0.015)
+    financial_issuer_proxy = (
+        sector == "Financials"
+        and symbol not in SECTOR_ETFS
+        and symbol not in {"SECTOR", "US"}
+    )
     return {
-        "ticker": yahoo_symbol(ticker or ""),
+        "ticker": symbol,
         "equity_beta": round(beta, 4),
+        "risk_free_rate": round(risk_free_rate, 6),
+        "risk_free_source": treasury.get("source_class"),
+        "risk_free_as_of": treasury.get("as_of"),
+        "risk_free_release_id": treasury.get("release_id"),
         "debt_ratio": round(debt_ratio, 4),
         "cost_of_equity": round(cost_of_equity, 4),
         "after_tax_cost_of_debt": round(after_tax_debt, 4),
         "wacc": round(wacc, 4),
         "terminal_growth": round(terminal_growth, 4),
-        "quality": quality,
+        "quality": f"{quality}; Treasury rate {'loaded' if treasury.get('rate') is not None else 'fallback assumption'}",
         "formula": "WACC = E/V x (risk-free + beta x ERP) + D/V x pre-tax debt cost x (1-tax)",
+        "decision_suitable": not financial_issuer_proxy,
+        "issuer_point_estimate_allowed": False,
+        "applicability_status": (
+            "research-only blocker — generic FCFF/WACC is not decision-suitable for a financial institution; use an approved equity/residual-income method"
+            if financial_issuer_proxy
+            else "research calibration — official Treasury rate does not complete issuer WACC"
+        ),
     }
 
 
-TRANSITION_DCF_COMPONENTS = (
+MACRO_DCF_COMPONENTS = (
     "country_gdp",
-    "sector_demand",
     "supply_chain",
+)
+
+TRANSITION_DCF_COMPONENTS = (
+    "sector_demand",
     "carbon_cost",
     "energy_cost",
     "transition_capex",
     "pass_through_offset",
 )
 
-DCF_COMPONENTS = ("acute_physical", "chronic_physical") + TRANSITION_DCF_COMPONENTS
+DCF_COMPONENTS = (
+    ("acute_physical", "chronic_physical")
+    + MACRO_DCF_COMPONENTS
+    + TRANSITION_DCF_COMPONENTS
+)
 
 
 def transition_cash_flow_channels(scenario, sector, horizon_fraction=1.0):
@@ -1849,7 +2876,7 @@ def transition_cash_flow_channels(scenario, sector, horizon_fraction=1.0):
         "pass_through_offset": pass_through_offset,
         "gross_cost_before_pass_through": carbon_cost + energy_cost,
         "sector_inputs": dict(channel),
-        "data_status": "Transparent sector calibration; NGFS/EIA/EPA/SEC issuer inputs source-ready",
+        "data_status": "Transparent sector calibration; official NGFS and SEC history loaded, but emissions, energy quantities, and accounting tie-out remain pending",
     }
 
 
@@ -1896,7 +2923,7 @@ def structural_transition_pressure(sector):
         return {
             key: round(sum(weight * safe_float(row.get(key), 0.0) for weight, row in sector_rows), 4)
             for key in ("risk", "carbon_cost", "demand_shift", "energy_cost", "transition_capex", "pass_through_offset")
-        } | {"status": "Value-added-weighted economy transition calibration; issuer data not loaded"}
+        } | {"status": "Value-added-weighted economy transition calibration; issuer climate translation not tied out"}
     channel = SECTOR_TRANSITION_CHANNELS[sector]
     carbon_cost = 0.30 * safe_float(channel.get("carbon_intensity"), 0.50)
     demand_shift = 0.25 * safe_float(channel.get("demand_elasticity"), 0.0)
@@ -1915,12 +2942,14 @@ def structural_transition_pressure(sector):
         "energy_cost": round(energy_cost, 4),
         "transition_capex": round(transition_capex, 4),
         "pass_through_offset": round(pass_through_offset, 4),
-        "status": "Sector cash-flow calibration; issuer NGFS/EIA/EPA/SEC data not loaded",
+        "status": "Sector cash-flow calibration; NGFS and SEC history are loaded, but EIA/EPA quantities and issuer accounting tie-out are pending",
     }
 
 
-def normalize_model_sector(sector):
-    sector = str(sector or "Technology").strip()
+def canonical_model_sector(sector):
+    if sector is None or not str(sector).strip():
+        return None
+    sector = str(sector).strip()
     aliases = {
         "Financial": "Financials",
         "Finance": "Financials",
@@ -1942,8 +2971,193 @@ def normalize_model_sector(sector):
     if sector == "Economy":
         return sector
     if sector not in SECTOR_DOWNSCALING_FACTORS:
-        return "Technology"
+        return None
     return sector
+
+
+def normalize_model_sector(sector):
+    return canonical_model_sector(sector) or "Technology"
+
+
+def load_issuer_sector_master():
+    global ISSUER_SECTOR_MASTER_CACHE
+    with ISSUER_SECTOR_MASTER_LOCK:
+        if ISSUER_SECTOR_MASTER_CACHE is not None:
+            return ISSUER_SECTOR_MASTER_CACHE
+        rows = {}
+        if ISSUER_SECTOR_MASTER_PATH.exists():
+            try:
+                with ISSUER_SECTOR_MASTER_PATH.open(newline="", encoding="utf-8") as handle:
+                    for row in csv.DictReader(handle):
+                        ticker = yahoo_symbol(row.get("ticker") or "")
+                        sector = canonical_model_sector(row.get("sector_canonical"))
+                        if (
+                            ticker
+                            and sector
+                            and row.get("mapping_status") == "eligible_equity_reference"
+                        ):
+                            rows[ticker] = dict(row)
+            except Exception:
+                rows = {}
+        ISSUER_SECTOR_MASTER_CACHE = rows
+        return ISSUER_SECTOR_MASTER_CACHE
+
+
+def listed_equity_sector_metadata(ticker):
+    symbol = yahoo_symbol(ticker or "")
+    retrieved_at = datetime.now().strftime("%Y-%m-%d")
+    source = MARKET_SECTOR_METADATA_SOURCE
+    if not symbol or len(symbol) > 12 or any(not (char.isalnum() or char in ".-") for char in symbol):
+        return {
+            "is_resolved": False,
+            "reason": "invalid ticker syntax",
+            "source": source,
+            "as_of": retrieved_at,
+        }
+    with MARKET_SECTOR_METADATA_LOCK:
+        cached = MARKET_SECTOR_METADATA_CACHE.get(symbol)
+    if cached:
+        return dict(cached)
+    if yf is None:
+        return {
+            "is_resolved": False,
+            "reason": "market metadata provider unavailable",
+            "source": source,
+            "as_of": retrieved_at,
+        }
+    try:
+        info = yf.Ticker(symbol).get_info() or {}
+    except Exception as exc:
+        return {
+            "is_resolved": False,
+            "reason": f"market metadata request failed ({type(exc).__name__})",
+            "source": source,
+            "as_of": retrieved_at,
+        }
+    quote_type = str(info.get("quoteType") or "").upper()
+    if quote_type != "EQUITY":
+        return {
+            "is_resolved": False,
+            "reason": f"quote type {quote_type or 'unknown'} is not an eligible listed equity",
+            "quote_type": quote_type or None,
+            "source": source,
+            "as_of": retrieved_at,
+        }
+    raw_sector = info.get("sector")
+    resolved_sector = canonical_model_sector(raw_sector)
+    if resolved_sector is None or resolved_sector == "Economy":
+        return {
+            "is_resolved": False,
+            "reason": f"unsupported or missing market sector {raw_sector or 'unknown'}",
+            "quote_type": quote_type,
+            "source": source,
+            "as_of": retrieved_at,
+        }
+    result = {
+        "is_resolved": True,
+        "ticker": symbol,
+        "resolved_sector": resolved_sector,
+        "raw_sector": raw_sector,
+        "issuer_name": info.get("shortName") or info.get("longName") or symbol,
+        "exchange": info.get("exchange") or info.get("fullExchangeName"),
+        "industry": info.get("industry"),
+        "quote_type": quote_type,
+        "source": source,
+        "as_of": retrieved_at,
+    }
+    with MARKET_SECTOR_METADATA_LOCK:
+        MARKET_SECTOR_METADATA_CACHE[symbol] = dict(result)
+    return result
+
+
+def resolve_issuer_sector(ticker, requested_sector=None):
+    symbol = yahoo_symbol(ticker or "")
+    requested = canonical_model_sector(requested_sector)
+    resolved = ISSUER_SECTOR_CROSSWALK.get(symbol)
+    if resolved is None:
+        master_row = load_issuer_sector_master().get(symbol)
+        if master_row:
+            resolved = canonical_model_sector(master_row.get("sector_canonical"))
+            conflict = requested is not None and requested != resolved
+            return {
+                "ticker": symbol,
+                "requested_sector": requested,
+                "resolved_sector": resolved,
+                "is_calculable": True,
+                "has_conflict": conflict,
+                "status": (
+                    f"local issuer-sector master applied — requested {requested} overridden by {resolved}"
+                    if conflict
+                    else f"local issuer-sector master applied — {resolved}"
+                ),
+                "mapping_tier": "local SEC/Nasdaq issuer-sector master",
+                "issuer_name": master_row.get("company_name"),
+                "exchange": master_row.get("exchange"),
+                "industry": master_row.get("industry"),
+                "quote_type": master_row.get("quote_type"),
+                "cik": master_row.get("cik"),
+                "country": master_row.get("country"),
+                "source": "Local issuer-sector master; Nasdaq sector/industry joined to SEC ticker/CIK/exchange where matched",
+                "as_of": master_row.get("as_of"),
+            }
+        metadata = listed_equity_sector_metadata(symbol)
+        if metadata.get("is_resolved"):
+            resolved = metadata["resolved_sector"]
+            conflict = requested is not None and requested != resolved
+            return {
+                "ticker": symbol,
+                "requested_sector": requested,
+                "resolved_sector": resolved,
+                "is_calculable": True,
+                "has_conflict": conflict,
+                "status": (
+                    f"listed-equity market mapping applied — requested {requested} overridden by {resolved}"
+                    if conflict
+                    else f"listed-equity market mapping applied — {resolved}"
+                ),
+                "mapping_tier": "on-demand listed-equity metadata",
+                "issuer_name": metadata.get("issuer_name"),
+                "exchange": metadata.get("exchange"),
+                "industry": metadata.get("industry"),
+                "quote_type": metadata.get("quote_type"),
+                "source": metadata["source"],
+                "as_of": metadata["as_of"],
+            }
+        return {
+            "ticker": symbol,
+            "requested_sector": requested,
+            "resolved_sector": None,
+            "is_calculable": False,
+            "has_conflict": False,
+            "status": f"not calculable — {metadata.get('reason', 'issuer sector is not verified')}",
+            "mapping_tier": "on-demand listed-equity metadata",
+            "issuer_name": None,
+            "exchange": None,
+            "industry": None,
+            "quote_type": metadata.get("quote_type"),
+            "source": metadata.get("source", MARKET_SECTOR_METADATA_SOURCE),
+            "as_of": metadata.get("as_of", datetime.now().strftime("%Y-%m-%d")),
+        }
+    conflict = requested is not None and requested != resolved
+    return {
+        "ticker": symbol,
+        "requested_sector": requested,
+        "resolved_sector": resolved,
+        "is_calculable": True,
+        "has_conflict": conflict,
+        "mapping_tier": "controlled research crosswalk",
+        "issuer_name": None,
+        "exchange": None,
+        "industry": None,
+        "quote_type": "EQUITY",
+        "status": (
+            f"controlled mapping applied — requested {requested} overridden by {resolved}"
+            if conflict
+            else f"controlled mapping applied — {resolved}"
+        ),
+        "source": ISSUER_SECTOR_CROSSWALK_SOURCE,
+        "as_of": ISSUER_SECTOR_CROSSWALK_AS_OF,
+    }
 
 
 def normalized_sector_value_added_weights():
@@ -2033,15 +3247,16 @@ def physical_event_loss(hazard_intensity, exposure, vulnerability, resilience):
 def issuer_vulnerability_profile(ticker, sector):
     symbol = yahoo_symbol(ticker or "AAPL")
     sector = normalize_model_sector(sector)
-    override = ISSUER_VULNERABILITY_OVERRIDES.get(symbol)
-    if override:
-        acute_ratio = safe_float(override.get("acute_ratio"), 1.0)
-        chronic_ratio = safe_float(override.get("chronic_ratio"), 1.0)
-        quality = override.get("quality", "Issuer proxy")
-    else:
-        acute_ratio = 1.0
-        chronic_ratio = 1.0
-        quality = "Sector median fallback"
+    # CFP-2026-003 removes unsupported point estimates by ticker. Until a
+    # governed issuer exposure record exists, vulnerability remains at the
+    # disclosed sector fallback and must not masquerade as issuer evidence.
+    acute_ratio = 1.0
+    chronic_ratio = 1.0
+    quality = (
+        "Sector calibration"
+        if symbol in {"SECTOR", "US"} or symbol == sector.upper()
+        else "Sector research fallback; issuer vulnerability not verified"
+    )
     if sector == "Economy":
         weights = normalized_sector_value_added_weights()
         factors = {
@@ -2058,6 +3273,8 @@ def issuer_vulnerability_profile(ticker, sector):
         "labor_intensity": round(factors["labor"] * chronic_ratio, 4),
         "macro_beta": round(factors["macro_beta"], 4),
         "quality": quality,
+        "issuer_specific": False,
+        "evidence_grade": "Proxy-dominant",
     }
 
 
@@ -2086,7 +3303,12 @@ def climate_model_scope_rows(scope="portfolio", sector="Technology", ticker="AAP
     if scope not in {"country", "sector", "issuer", "portfolio"}:
         scope = "portfolio"
     daily_signal = daily_signal or load_daily_climate_signal()
-    sector = normalize_model_sector(SECTOR_ETFS.get(yahoo_symbol(ticker), {}).get("name", sector))
+    sector_resolution = resolve_issuer_sector(ticker, sector) if scope == "issuer" else None
+    sector = (
+        sector_resolution.get("resolved_sector")
+        if sector_resolution and sector_resolution.get("resolved_sector")
+        else normalize_model_sector(SECTOR_ETFS.get(yahoo_symbol(ticker), {}).get("name", sector))
+    )
     if scope == "portfolio":
         rows = []
         portfolio = current_model_portfolio(daily_signal)
@@ -2131,6 +3353,7 @@ def climate_model_scope_rows(scope="portfolio", sector="Technology", ticker="AAP
             "sector": sector,
             "weight": 1.0,
             "vulnerability": issuer_vulnerability_profile(ticker, sector),
+            "sector_resolution": sector_resolution,
         }
     ]
 
@@ -2339,10 +3562,12 @@ def scenario_repricing_for_scope(scope_rows, target, reference, horizon):
                     key=lambda item: abs(item[1]),
                     default=("-", 0.0),
                 )[0],
+                "transition_driver_label": "largest calibrated direct transition channel",
                 "transition_channel_inputs": target_components.get("transition_channel_inputs", {}),
                 "transition_data_status": target_components.get("transition_data_status"),
                 "macro_channel_inputs": target_components.get("macro_channel_inputs", {}),
                 "valuation": valuation,
+                "valuation_applicability": valuation.get("applicability_status"),
             }
         )
     attribution = []
@@ -2368,12 +3593,16 @@ def scenario_repricing_for_scope(scope_rows, target, reference, horizon):
             - aggregate_reference["chronic_physical"],
             4,
         ),
+        "macro_loss_delta": round(
+            sum(aggregate_target[key] - aggregate_reference[key] for key in MACRO_DCF_COMPONENTS),
+            4,
+        ),
         "transition_loss_delta": round(
             sum(aggregate_target[key] - aggregate_reference[key] for key in TRANSITION_DCF_COMPONENTS),
             4,
         ),
         "attribution": attribution,
-        "attribution_method": "Exact Shapley decomposition across physical and transition FCFF channels",
+        "attribution_method": "Exact Shapley decomposition across physical, macro, and direct-transition FCFF channels",
         "attribution_residual": round(attribution_residual, 8),
         "weighted_target_present_value": round(weighted_target_value, 6),
         "weighted_reference_present_value": round(weighted_reference_value, 6),
@@ -2442,9 +3671,49 @@ def holding_scenario_tail_proxy(ticker, sector, horizon=2050, observed_beta=None
 
 
 def event_nowcast_for_scope(scope_rows, daily_signal, state):
+    if not short_term_hazard_is_calculable(daily_signal):
+        return {
+            "event_risk": None,
+            "selection_risk": None,
+            "tactical_overlay_bps": 0,
+            "action": "No tactical trade — live hazard data unavailable",
+            "data_confidence": None,
+            "top_driver": "unavailable",
+            "source_mode": daily_signal.get("source_mode", "NWS unavailable"),
+            "is_calculable": False,
+            "observed_zero": False,
+            "decision_status": daily_signal.get(
+                "decision_status",
+                "not calculable — live NWS hazard data unavailable",
+            ),
+            "calculation": {
+                "event_risk": "Not calculable because live NWS hazard data are unavailable",
+                "selection_risk": "Suppressed",
+                "overlay_limit_bps": 0,
+                "probability_rule": "Unavailable data are not represented as observed zero risk",
+            },
+            "hazards": [],
+        }
+    issuer_row = scope_rows[0] if len(scope_rows) == 1 else None
+    issuer_symbol = yahoo_symbol(issuer_row.get("ticker")) if issuer_row else ""
+    issuer_scope = (
+        issuer_row is not None
+        and issuer_symbol not in {"", "US", "SECTOR"}
+        and issuer_symbol not in SECTOR_ETFS
+    )
+    issuer_facility_profile = (
+        issuer_hazard_exposure_profile(issuer_symbol, issuer_row.get("sector"))
+        if issuer_scope
+        else None
+    )
+    issuer_facility_verified = bool(
+        issuer_facility_profile
+        and issuer_facility_profile.get("observed_hazards") == len(HAZARD_CATEGORIES)
+    )
     categories = daily_signal.get("category_intensity", {}) or {}
     confidence = safe_float(state.get("data_confidence"), 0.50)
     event_pressure = clamp(safe_float(state.get("daily_pressure"), 0.0), 0.0, 1.0)
+    category_total = sum(max(0.0, safe_float(categories.get(hazard), 0.0)) for hazard in HAZARD_CATEGORIES)
     hazard_rows = []
     raw_event_risk = 0.0
     weighted_resilience = 0.0
@@ -2507,27 +3776,64 @@ def event_nowcast_for_scope(scope_rows, daily_signal, state):
             }
         )
     event_risk = clamp(raw_event_risk, 0.0, 1.0)
+    if issuer_scope and not issuer_facility_verified:
+        return {
+            "event_risk": None,
+            "research_event_index": round(event_risk, 4),
+            "selection_risk": None,
+            "tactical_overlay_bps": 0,
+            "action": "No tactical trade — issuer facility exposure not verified",
+            "data_confidence": round(confidence, 4),
+            "top_driver": daily_signal.get("top_driver", "climate"),
+            "source_mode": daily_signal.get("source_mode", "NWS signal"),
+            "is_calculable": False,
+            "hazard_feed_calculable": True,
+            "issuer_exposure_calculable": False,
+            "observed_zero": event_risk == 0.0,
+            "decision_status": "not calculable — issuer facility exposure and geolocation are not verified",
+            "calculation": {
+                "event_risk": "Not calculable for the issuer; displayed research_event_index uses sector fallback",
+                "research_event_index": "Unitless NWS severity x sector exposure x issuer proxy vulnerability x (1 - sector resilience)",
+                "selection_risk": "Suppressed",
+                "overlay_limit_bps": 0,
+                "probability_rule": "The research index is not a probability, financial loss, or return",
+            },
+            "hazards": sorted(hazard_rows, key=lambda row: row["risk_contribution"], reverse=True),
+        }
     selection_risk = clamp(0.72 * event_risk + 0.28 * (1 - confidence), 0.0, 1.0)
-    tactical_edge = (
-        0.55 * weighted_resilience
-        + 0.15 * weighted_opportunity
-        - 0.75 * event_risk
-    )
-    overlay_bps = int(round(TACTICAL_OVERLAY_LIMIT_BPS * clamp(tactical_edge, -1.0, 1.0)))
-    if overlay_bps <= -80:
-        action = "Underweight / hedge"
-    elif overlay_bps >= 80:
-        action = "Tactical overweight"
+    observed_zero = category_total <= 0 or event_pressure <= 0
+    if observed_zero:
+        overlay_bps = 0
+        action = "No tactical trade — no active matched NWS hazard"
     else:
-        action = "Hold near strategic weight"
+        tactical_edge = (
+            0.55 * weighted_resilience
+            + 0.15 * weighted_opportunity
+            - 0.75 * event_risk
+        )
+        overlay_bps = int(round(TACTICAL_OVERLAY_LIMIT_BPS * clamp(tactical_edge, -1.0, 1.0)))
+        if overlay_bps <= -80:
+            action = "Underweight / hedge"
+        elif overlay_bps >= 80:
+            action = "Tactical overweight"
+        else:
+            action = "Hold near strategic weight"
     return {
         "event_risk": round(event_risk, 4),
+        "research_event_index": None,
         "selection_risk": round(selection_risk, 4),
         "tactical_overlay_bps": overlay_bps,
         "action": action,
         "data_confidence": round(confidence, 4),
         "top_driver": daily_signal.get("top_driver", "climate"),
         "source_mode": daily_signal.get("source_mode", "NWS signal"),
+        "is_calculable": True,
+        "observed_zero": observed_zero,
+        "decision_status": (
+            "observed zero — NWS feed successful, no matched climate alerts"
+            if observed_zero
+            else "calculable — observed NWS active-alert severity"
+        ),
         "calculation": {
             "event_risk": "Sum[hazard severity x location/asset exposure x vulnerability x (1 - resilience)]",
             "selection_risk": "0.72 event risk + 0.28 data uncertainty",
@@ -2538,7 +3844,7 @@ def event_nowcast_for_scope(scope_rows, daily_signal, state):
     }
 
 
-def climate_model_lab_payload(scope="portfolio", target="current_policies", reference="baseline", horizon=2050, sector="Technology", ticker="AAPL"):
+def _base_climate_model_lab_payload(scope="portfolio", target="current_policies", reference="baseline", horizon=2050, sector="Technology", ticker="AAPL"):
     target_key = target if target in CLIMATE_SCENARIO_PATHS else "current_policies"
     reference_key = reference if reference in CLIMATE_SCENARIO_PATHS else "baseline"
     horizon = int(clamp(safe_float(horizon, 2050), max(CURRENT_YEAR + 1, 2030), 2050))
@@ -2548,6 +3854,11 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
     scope_key, scope_rows = climate_model_scope_rows(scope, sector=sector, ticker=ticker, daily_signal=daily_signal)
     target_scenario = CLIMATE_SCENARIO_PATHS[target_key]
     reference_scenario = CLIMATE_SCENARIO_PATHS[reference_key]
+    ngfs_release = latest_official_ngfs_transition()
+    sec_history = latest_official_sec_financial_history()
+    issuer_demo = latest_eight_issuer_demo()
+    target_ngfs = official_ngfs_transition_pathway(target_key, horizon, release=ngfs_release)
+    reference_ngfs = official_ngfs_transition_pathway(reference_key, horizon, release=ngfs_release)
     long_term = scenario_repricing_for_scope(scope_rows, target_scenario, reference_scenario, horizon)
     short_term = event_nowcast_for_scope(scope_rows, daily_signal, state)
     scope_labels = {
@@ -2558,11 +3869,44 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
     }
     downscaling_check = physical_downscaling_reconciliation()
     scope_weight_sum = sum(safe_float(row.get("weight"), 0.0) for row in scope_rows)
+    treasury = latest_official_treasury_rate("10y")
+    treasury_loaded = treasury.get("rate") is not None
+    ngfs_loaded = ngfs_release.get("is_loaded") is True
     resolution = [
-        {"level": "Country", "input": "Target-reference GDP, inflation, unemployment, energy and physical pathways", "status": "Transparent scenario proxy", "output": "Country macro shock"},
-        {"level": "Sector", "input": "BEA-style GDP beta, input-output supply beta, and physical vulnerability", "status": "Calibrated fallback", "output": "Sector revenue and value-added shock"},
-        {"level": "Issuer", "input": "Facility hazard exposure plus earnings beta, revenue geography, and supplier/customer links", "status": "Issuer/sector fallback where facility or business links are missing", "output": "Issuer damage, revenue, and FCFF path"},
-        {"level": "Portfolio", "input": "Normalized holding weights", "status": "Weight reconciled", "output": "Weighted value impact plus Shapley attribution"},
+        {
+            "level": "Scenario pathways",
+            "input": "Target-reference physical, macro, energy, carbon-price, and demand paths",
+            "status": (
+                f"Official NGFS {ngfs_release['source_release']} USA transition release loaded; "
+                "physical and macro pathways remain project calibrations"
+                if ngfs_loaded
+                else "Project calibration — official NGFS pathway release not loaded"
+            ),
+            "output": "Official transition evidence is separate from the unvalidated physical/macro research proxy",
+        },
+        {"level": "Sector transmission", "input": "GDP beta, input-output supply beta, and physical vulnerability", "status": "Project calibration — governed BEA calibration not loaded", "output": "Sector proxy; not issuer evidence"},
+        {
+            "level": "Issuer evidence",
+            "input": "Facilities, emissions, financial statements, revenue geography, suppliers/customers, and adaptation",
+            "status": (
+                f"Official SEC history loaded for {len(sec_history['tickers'])} candidates, "
+                f"{sec_history['start_period']}-{sec_history['end_period']}; other issuer evidence remains missing"
+                if sec_history.get("is_loaded")
+                else "Missing or incomplete — no issuer-specific physical conclusion"
+            ),
+            "output": "SEC accounting/FCFF tie-out pending; sector-calibrated research proxy only",
+        },
+        {
+            "level": "Valuation rate",
+            "input": "U.S. Treasury 10-year par yield",
+            "status": (
+                f"Observed official — {treasury['as_of']}; release {treasury['release_id']}"
+                if treasury_loaded
+                else "Missing — fallback assumption remains active"
+            ),
+            "output": "Risk-free leg only; ERP, beta, debt cost, capital structure, and terminal growth remain calibrations",
+        },
+        {"level": "Portfolio", "input": "Normalized holding weights", "status": "Engineering reconciliation only", "output": "Research aggregation; no allocation recommendation"},
     ]
     calculation_ledger = [
         {
@@ -2571,6 +3915,21 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
             "input": f"{target_scenario['label']} vs {reference_scenario['label']}",
             "output": f"{long_term['value_impact']:+.4%} as-of-date value impact",
             "check": "Pass" if target_key != reference_key or abs(long_term["value_impact"]) < 1e-10 else "Review",
+        },
+        {
+            "step": "Official NGFS transition evidence",
+            "formula": "Pathway delta = target model-median value - reference model-median value; min/max are model range, not probability bounds",
+            "input": (
+                f"{target_ngfs.get('scenario')}: {target_ngfs.get('carbon_price_median')} vs "
+                f"{reference_ngfs.get('scenario')}: {reference_ngfs.get('carbon_price_median')} "
+                f"{target_ngfs.get('carbon_price_unit') or reference_ngfs.get('carbon_price_unit') or ''}"
+            ),
+            "output": (
+                f"NGFS release {ngfs_release.get('source_release')}; issuer carbon cost not calculated until covered emissions are loaded"
+                if ngfs_loaded
+                else "Not loaded; project calibration remains isolated"
+            ),
+            "check": "Pass" if ngfs_loaded else "Blocked",
         },
         {
             "step": "Sector conservation",
@@ -2590,8 +3949,12 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
             "step": "Acute physical nowcast",
             "formula": "Loss = hazard severity x exposure x vulnerability x (1 - resilience)",
             "input": "NWS hazard mix plus facility mapping when loaded; otherwise sector fallback",
-            "output": f"event risk {short_term['event_risk']:.4%}; not an occurrence probability",
-            "check": "Pass",
+            "output": (
+                f"event risk {short_term['event_risk']:.4%}; not an occurrence probability"
+                if short_term["event_risk"] is not None
+                else "Not calculable; issuer event output suppressed"
+            ),
+            "check": "Pass" if short_term.get("is_calculable") else "Blocked",
         },
         {
             "step": "Revenue transmission",
@@ -2642,17 +4005,415 @@ def climate_model_lab_payload(scope="portfolio", target="current_policies", refe
         "ticker": yahoo_symbol(ticker or "AAPL"),
         "long_term": long_term,
         "short_term": short_term,
+        "official_transition": {
+            "release": {
+                "is_loaded": ngfs_loaded,
+                "release_id": ngfs_release.get("release_id"),
+                "source_release": ngfs_release.get("source_release"),
+                "source_release_date": ngfs_release.get("source_release_date"),
+                "source_url": ngfs_release.get("source_url"),
+                "region": ngfs_release.get("region"),
+                "physical_damage_status": ngfs_release.get("physical_damage_status"),
+            },
+            "target": target_ngfs,
+            "reference": reference_ngfs,
+            "issuer_translation_status": "blocked until covered issuer emissions, jurisdiction, free allocation, and pass-through evidence are loaded",
+        },
+        "demo_issuers": issuer_demo,
         "climate_state": state,
         "scope_resolution": resolution,
         "calculation_ledger": calculation_ledger,
         "methodology": {
             "long_term": "Target minus reference pathways flow through country GDP -> sector demand/input-output -> issuer earnings beta, then into FCFF. Transition FCFF is carbon cost + demand shift + energy cost + transition CapEx - pass-through; CO2 concentration is not a transition input.",
-            "short_term": "NWS hazard severity x location exposure x vulnerability x (1-resilience), translated into selection risk and a capped zero-sum tactical weight overlay.",
+            "short_term": "NWS hazard severity is retained as research context. It is not an issuer probability or loss; issuer use requires verified facility exposure.",
             "probability_rule": "Scenario outputs are conditional stresses. The model does not assign occurrence probabilities to NGFS-style scenarios.",
             "tail_rule": "Scenario tail is reported separately from physical and transition pressure to avoid double counting in the client risk score.",
         },
-        "calibration_notice": "The workflow follows the uploaded Bloomberg target-reference, downscaling, cash-flow, and as-of-date valuation logic. Transition channels currently use transparent sector calibrations; NGFS, EIA, EPA eGRID/GHGRP, and SEC issuer inputs are source-ready but are not fabricated when unavailable.",
+        "calibration_notice": "Official NGFS Phase 5.1 USA transition pathways are loaded as a separate evidence layer. The current sector cash-flow coefficients are not re-labeled as official; issuer carbon cost remains blocked until emissions and policy-coverage evidence are loaded. Physical and macro pathways remain project calibrations.",
     }
+
+
+def climate_model_lab_payload(scope="portfolio", target="current_policies", reference="baseline", horizon=2050, sector="Technology", ticker="AAPL", assumption_case="base"):
+    scope_key = scope if scope in {"country", "sector", "issuer", "portfolio"} else "portfolio"
+    symbol = yahoo_symbol(ticker or "AAPL")
+    sector_resolution = resolve_issuer_sector(symbol, requested_sector=sector) if scope_key == "issuer" else None
+    target_key = target if target in CLIMATE_SCENARIO_PATHS else "current_policies"
+    reference_key = reference if reference in CLIMATE_SCENARIO_PATHS else "baseline"
+    target_scenario = CLIMATE_SCENARIO_PATHS[target_key]
+    reference_scenario = CLIMATE_SCENARIO_PATHS[reference_key]
+    horizon_value = int(clamp(safe_float(horizon, 2050), max(CURRENT_YEAR + 1, 2030), 2050))
+
+    if sector_resolution and not sector_resolution["is_calculable"]:
+        return {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "scope": "issuer",
+            "scope_label": f"{symbol} issuer — not calculable",
+            "target_key": target_key,
+            "target": {**target_scenario, "key": target_key},
+            "reference_key": reference_key,
+            "reference": {**reference_scenario, "key": reference_key},
+            "horizon": horizon_value,
+            "sector": None,
+            "ticker": symbol,
+            "sector_resolution": sector_resolution,
+            "long_term": {
+                "value_impact": None,
+                "physical_loss_delta": None,
+                "macro_loss_delta": None,
+                "transition_loss_delta": None,
+                "attribution": [],
+                "attribution_method": "Not run",
+                "attribution_residual": None,
+                "weighted_target_present_value": None,
+                "weighted_reference_present_value": None,
+                "weighted_wacc": None,
+                "weighted_terminal_growth": None,
+                "instruments": [],
+            },
+            "short_term": {
+                "event_risk": None,
+                "research_event_index": None,
+                "selection_risk": None,
+                "tactical_overlay_bps": 0,
+                "action": "Issuer event output suppressed — issuer sector is not verified",
+                "data_confidence": 0.0,
+                "top_driver": None,
+                "source_mode": "blocked before risk calculation",
+                "is_calculable": False,
+                "observed_zero": False,
+                "decision_status": sector_resolution["status"],
+                "hazards": [],
+            },
+            "climate_state": None,
+            "scope_resolution": [
+                {
+                    "level": "Issuer mapping",
+                    "input": symbol,
+                    "status": "Blocked",
+                    "output": "No verified sector; no Technology default and no risk score",
+                }
+            ],
+            "calculation_ledger": [
+                {
+                    "step": "Issuer-sector mapping",
+                    "formula": "ticker -> controlled issuer-sector crosswalk",
+                    "input": symbol,
+                    "output": sector_resolution["status"],
+                    "check": "Blocked",
+                }
+            ],
+            "decision_suitable": False,
+                "decision_status": "Blocked — resolve the issuer sector before any physical, transition, or valuation calculation",
+            "model_stage": "Research only — model not promoted",
+            "output_class": "Not calculable",
+            "evidence_grade": "Missing mandatory issuer mapping",
+            "permitted_use": "Data-gap review only; no investment or tactical decision",
+            "methodology": {
+                "long_term": "Not run because the issuer sector is unverified.",
+                "short_term": "Not run because sector and issuer exposure are unverified.",
+                "probability_rule": "No missing input is represented as zero risk.",
+                "tail_rule": "No scenario tail is produced from an unverified issuer mapping.",
+            },
+            "calibration_notice": "Unresolved tickers fail closed. Supply governed entity metadata or restore a resolvable listed-equity metadata source before rerunning the model.",
+        }
+
+    resolved_sector = sector_resolution["resolved_sector"] if sector_resolution else sector
+    payload = _base_climate_model_lab_payload(
+        scope=scope_key,
+        target=target_key,
+        reference=reference_key,
+        horizon=horizon_value,
+        sector=resolved_sector,
+        ticker=symbol,
+    )
+    long_term = payload["long_term"]
+    short_term = payload["short_term"]
+    modeled_sector = (
+        long_term["instruments"][0]["sector"]
+        if scope_key in {"issuer", "sector"} and long_term.get("instruments")
+        else normalize_model_sector(resolved_sector)
+    )
+    payload["sector"] = modeled_sector
+    payload["sector_resolution"] = sector_resolution
+    pilot = latest_governed_duke_pilot() if scope_key == "issuer" and symbol == "DUK" else {"is_loaded": False}
+    payload["issuer_pilot"] = pilot
+    if scope_key == "issuer":
+        payload["scope_label"] = (
+            f"{symbol} evidence pilot + {modeled_sector} sector stress"
+            if pilot.get("is_loaded")
+            else f"{symbol} issuer research proxy"
+        )
+        payload["scope_resolution"].insert(
+            0,
+            {
+                "level": "Issuer mapping",
+                "input": f"{symbol}; requested {sector_resolution['requested_sector'] or 'none'}",
+                "status": sector_resolution["status"],
+                "output": f"{modeled_sector}; {sector_resolution['source']} (as of {sector_resolution['as_of']})",
+            },
+        )
+        payload["calculation_ledger"].insert(
+            0,
+            {
+                "step": "Issuer-sector mapping",
+                "formula": "ticker -> controlled issuer-sector crosswalk; verified mapping overrides UI selection",
+                "input": f"{symbol}; requested {sector_resolution['requested_sector'] or 'none'}",
+                "output": f"{modeled_sector}; {sector_resolution['status']}",
+                "check": "Pass",
+            },
+        )
+        if pilot.get("is_loaded"):
+            payload["scope_resolution"].insert(
+                1,
+                {
+                    "level": "DUK governed pilot",
+                    "input": f"EPA {pilot['epa_year']} ownership/emissions + FEMA county context + SEC 2025",
+                    "status": f"Hash verified — release {pilot['release_id']}",
+                    "output": (
+                        f"{pilot['direct_emitter_matches']}/{pilot['parent_records']} direct-emitter matches; "
+                        f"{pilot['coordinate_matches']} coordinates; physical financial loss remains Not calculable"
+                    ),
+                },
+            )
+            for hazard in payload["short_term"].get("hazards", []):
+                hazard["data_quality"] = (
+                    "Sector hazard fallback; EPA facility ownership/coordinates and FEMA county context loaded, "
+                    "but economic exposure and damage evidence are missing"
+                )
+
+    for row in payload["scope_resolution"]:
+        if row["level"] == "Issuer":
+            row.update(
+                {
+                    "input": "Controlled sector mapping; facility hazard exposure, earnings beta, revenue geography, and business links",
+                    "status": "Research proxy; issuer event output blocked when facility mapping is missing",
+                    "output": "Conditional issuer value proxy; no invented issuer event risk",
+                }
+            )
+
+    valuation_suitable = all(
+        bool((row.get("valuation") or {}).get("decision_suitable", True))
+        for row in long_term.get("instruments", [])
+    )
+    for row in payload["calculation_ledger"]:
+        if row["step"] == "Acute physical nowcast":
+            row["formula"] = "Research index = hazard severity x exposure x vulnerability x (1 - resilience)"
+            row["input"] = "NWS hazard mix plus verified facility mapping; sector fallback is display-only for issuer scope"
+            if short_term.get("event_risk") is not None:
+                row["output"] = f"hazard/exposure index {short_term['event_risk'] * 100:.2f} / 100; not a probability or financial loss"
+            elif short_term.get("research_event_index") is not None:
+                row["output"] = f"Issuer risk not calculable; sector proxy index {short_term['research_event_index'] * 100:.2f} / 100; no issuer decision output"
+            else:
+                row["output"] = "Not calculable; issuer event output suppressed"
+        elif row["step"] == "Revenue transmission":
+            row.update(
+                {
+                    "step": "Macro transmission",
+                    "formula": "Macro loss = country GDP channel + input-output supply-chain channel",
+                    "input": "Country scenario plus input-output supply calibration",
+                    "output": f"macro delta {long_term['macro_loss_delta']:+.4%}; kept separate from direct transition risk",
+                }
+            )
+        elif row["step"] == "Transition cash flow":
+            row.update(
+                {
+                    "step": "Direct transition cash flow",
+                    "formula": "TR = sector demand + carbon cost + energy cost + transition CapEx - pass-through",
+                    "output": f"direct transition delta {long_term['transition_loss_delta']:+.4%}",
+                }
+            )
+        elif row["step"] == "Valuation" and not valuation_suitable:
+            row["output"] = "Research-only blocker: generic FCFF/WACC is not decision-suitable for a financial institution"
+            row["check"] = "Blocked"
+        elif row["step"] == "Attribution":
+            row["formula"] = "Exact Shapley value across physical, macro, and direct-transition FCFF channels"
+
+    payload["decision_suitable"] = bool(scope_key != "issuer" or (valuation_suitable and short_term.get("is_calculable")))
+    issuer_blocks = []
+    if scope_key == "issuer" and not short_term.get("is_calculable"):
+        issuer_blocks.append(
+            "issuer economic exposure and damage evidence are not verified; issuer event output suppressed"
+            if pilot.get("is_loaded")
+            else "issuer facility exposure is not verified; issuer event output suppressed"
+        )
+    if scope_key == "issuer" and not valuation_suitable:
+        issuer_blocks.append("generic FCFF/WACC is not decision-suitable for a financial institution")
+    if scope_key == "issuer" and pilot.get("is_loaded"):
+        issuer_blocks.extend([
+            "EPA emissions and facility evidence are loaded, but free allocation, pass-through, and emissions path are missing",
+            "FEMA county hazard context is loaded, but exposed asset value and damage functions are missing",
+            "SEC FCFF bridge is a filing-tie-out candidate; WACC/terminal-growth gate remains incomplete",
+        ])
+    evidence_limits = issuer_blocks or [
+        "sector/project calibrations remain; official NGFS and SEC history are loaded, but emissions and accounting tie-out are pending"
+    ]
+    payload["decision_status"] = "Research-only — " + "; ".join(evidence_limits)
+    payload["model_stage"] = "Research only — model not promoted"
+    payload["output_class"] = (
+        f"{modeled_sector} sector stress plus governed issuer evidence; issuer value not calculable"
+        if scope_key == "issuer" and pilot.get("is_loaded")
+        else ("Sector-calibrated issuer sensitivity" if scope_key == "issuer" else "Project-calibrated conditional stress")
+    )
+    payload["evidence_grade"] = "Mixed observed/derived/proxy with mandatory gaps" if pilot.get("is_loaded") else "Proxy-dominant"
+    payload["permitted_use"] = "Scenario research and data-gap review only; no investment or tactical decision"
+    payload["methodology"] = {
+        "long_term": "Target minus reference pathways flow through country GDP and supply-chain macro transmission, direct transition cash-flow channels, and physical damage into a conditional FCFF research proxy. CO2 concentration is not a transition input.",
+        "short_term": "NWS severity x exposure x vulnerability x (1-resilience) is a unitless research index. Issuer use requires verified facility exposure; a sector fallback never becomes an issuer loss or decision output.",
+        "probability_rule": "Scenario outputs are conditional stresses. The model does not assign occurrence probabilities to NGFS-style scenarios.",
+        "tail_rule": "Scenario tail is reported separately from physical and transition pressure to avoid double counting in the client risk score.",
+    }
+    payload["calibration_notice"] = (
+        "Outputs are research proxies, not audited issuer forecasts. Industry mapping is controlled and disclosed; "
+        "missing facility, revenue-geography, and supplier/customer data are not fabricated. Financial-institution "
+        "FCFF/WACC results remain blocked from decision use pending an approved equity or residual-income method."
+    )
+    public_release = latest_eight_issuer_public_evidence()
+    valuation_release = latest_eight_issuer_valuation_inputs()
+    climate_evidence_release = latest_eight_issuer_climate_evidence()
+    if public_release.get("is_loaded"):
+        scope_by_ticker = {row.get("ticker"): row for row in public_release.get("scope1_rows", [])}
+        physical_by_ticker = {row.get("ticker"): row for row in public_release.get("physical_rows", [])}
+        payload["public_evidence_universe"] = {
+            "release_id": public_release.get("release_id"),
+            "rows": [
+                {
+                    "ticker": ticker_key,
+                    "scope1_tco2e": safe_float((scope_by_ticker.get(ticker_key) or {}).get("scope1_tco2e"), None),
+                    "fema_county_matches": int(safe_float((physical_by_ticker.get(ticker_key) or {}).get("fema_county_matches"), 0)),
+                    "epa_parent_facilities": int(safe_float((physical_by_ticker.get(ticker_key) or {}).get("epa_parent_facilities"), 0)),
+                    "disclosed_metric": (physical_by_ticker.get(ticker_key) or {}).get("disclosed_metric"),
+                    "disclosed_value": safe_float((physical_by_ticker.get(ticker_key) or {}).get("disclosed_value"), None),
+                }
+                for ticker_key in sorted(scope_by_ticker)
+            ],
+        }
+    if scope_key == "issuer" and public_release.get("is_loaded") and symbol in scope_by_ticker:
+        def issuer_row(rows):
+            return next((row for row in rows if row.get("ticker") == symbol), {})
+
+        scope1 = issuer_row(public_release.get("scope1_rows", []))
+        physical = issuer_row(public_release.get("physical_rows", []))
+        transmission = issuer_row(public_release.get("transmission_rows", []))
+        demo = issuer_row((payload.get("demo_issuers") or {}).get("rows", []))
+        target_path = (payload.get("official_transition") or {}).get("target") or {}
+        reference_path = (payload.get("official_transition") or {}).get("reference") or {}
+        target_price = safe_float(target_path.get("carbon_price_median"), None)
+        reference_price = safe_float(reference_path.get("carbon_price_median"), None)
+        tonnes = safe_float(scope1.get("scope1_tco2e"), None)
+        price_delta = None if target_price is None or reference_price is None else target_price - reference_price
+        gross_sensitivity = None if tonnes is None or price_delta is None else tonnes * price_delta
+        base_cash_flow = safe_float(demo.get("duke_fcff_usd"), None)
+        baseline_type = "unlevered FCFF candidate"
+        if base_cash_flow is None:
+            base_cash_flow = safe_float(demo.get("free_cash_flow_usd"), None)
+            baseline_type = "free cash flow"
+        ratio = (
+            gross_sensitivity / base_cash_flow
+            if gross_sensitivity is not None and base_cash_flow is not None and base_cash_flow > 0
+            else None
+        )
+        payload["issuer_public_evidence"] = {
+            "is_loaded": True,
+            "release_id": public_release.get("release_id"),
+            "ticker": symbol,
+            "transition": {
+                "classification": "calculated uniform-price gross sensitivity",
+                "scope1_tco2e": tonnes,
+                "scope1_year": int(safe_float(scope1.get("reporting_year"), 0)),
+                "source_title": scope1.get("source_title"),
+                "source_url": scope1.get("source_url"),
+                "target_price_usd2010_per_tco2": target_price,
+                "reference_price_usd2010_per_tco2": reference_price,
+                "price_delta_usd2010_per_tco2": price_delta,
+                "gross_sensitivity_usd": gross_sensitivity,
+                "cash_flow_baseline_usd": base_cash_flow,
+                "cash_flow_baseline_type": baseline_type,
+                "gross_sensitivity_to_cash_flow": ratio,
+                "net_transition_cost_usd": None,
+                "net_cost_status": "Not calculable — coverage, jurisdiction, free allocation, pass-through, and future emissions path are missing",
+            },
+            "physical": {
+                "classification": "exposure screen",
+                "epa_parent_facilities": int(safe_float(physical.get("epa_parent_facilities"), 0)),
+                "epa_direct_emitter_matches": int(safe_float(physical.get("epa_direct_emitter_matches"), 0)),
+                "fema_county_matches": int(safe_float(physical.get("fema_county_matches"), 0)),
+                "emissions_weighted_county_nri_score": safe_float(physical.get("emissions_weighted_county_nri_score"), None),
+                "weighting_method": physical.get("weighting_method"),
+                "disclosed_metric": physical.get("disclosed_metric"),
+                "disclosed_value": safe_float(physical.get("disclosed_value"), None),
+                "disclosed_unit": physical.get("disclosed_unit"),
+                "disclosed_year": physical.get("disclosed_year"),
+                "screen_status": physical.get("screen_status"),
+                "financial_loss_usd": None,
+                "financial_loss_status": "Not calculable — asset value, damage function, interruption, and insurance/recovery are missing",
+            },
+            "macro_supply": {
+                "classification": "observed financial context",
+                "operating_cash_flow_usd": safe_float(transmission.get("operating_cash_flow_usd"), None),
+                "capital_expenditure_usd": safe_float(transmission.get("capital_expenditure_usd"), None),
+                "free_cash_flow_usd": safe_float(transmission.get("free_cash_flow_usd"), None),
+                "capex_to_operating_cash_flow": safe_float(transmission.get("capex_to_operating_cash_flow"), None),
+                "loss_usd": None,
+                "loss_status": "Not calculable — revenue geography, value-chain weights, BEA industry join, and compatible scenario shock are missing",
+            },
+            "allowed_use": public_release.get("allowed_use"),
+        }
+        prototype = issuer_prototype_valuation(
+            symbol,
+            target_key,
+            reference_key,
+            payload.get("horizon"),
+            assumption_case,
+            scope1,
+            physical,
+            valuation_release,
+            ngfs_release=latest_official_ngfs_transition(),
+            climate_evidence=climate_evidence_release,
+        )
+        valuation_range = {}
+        if prototype.get("is_calculable"):
+            for case_name in ("low", "base", "high"):
+                case_result = issuer_prototype_valuation(
+                    symbol,
+                    target_key,
+                    reference_key,
+                    payload.get("horizon"),
+                    case_name,
+                    scope1,
+                    physical,
+                    valuation_release,
+                    ngfs_release=latest_official_ngfs_transition(),
+                    climate_evidence=climate_evidence_release,
+                )
+                valuation_range[case_name] = case_result.get("value_impact")
+        payload["prototype_valuation"] = prototype
+        payload["valuation_range"] = valuation_range
+        payload["sector_context"] = payload["long_term"]
+        payload["long_term"] = {
+            "value_impact": prototype.get("value_impact"),
+            "physical_loss_delta": next((row.get("terminal_cash_flow_delta_rate") for row in prototype.get("channels", []) if row.get("key") == "physical"), None),
+            "macro_loss_delta": next((row.get("terminal_cash_flow_delta_rate") for row in prototype.get("channels", []) if row.get("key") == "macro_supply"), None),
+            "transition_loss_delta": next((row.get("terminal_cash_flow_delta_rate") for row in prototype.get("channels", []) if row.get("key") == "transition"), None),
+            "attribution": prototype.get("channels", []),
+            "attribution_method": "Exact three-channel Shapley decomposition of the assumption-enabled DCF",
+            "attribution_residual": prototype.get("attribution_residual"),
+            "weighted_target_present_value": prototype.get("target_enterprise_value_usd"),
+            "weighted_reference_present_value": prototype.get("reference_enterprise_value_usd"),
+            "weighted_wacc": prototype.get("wacc"),
+            "weighted_terminal_growth": prototype.get("terminal_growth"),
+            "instruments": [],
+        }
+        payload["scope_label"] = f"{symbol} long-term climate valuation"
+        payload["decision_suitable"] = False
+        payload["decision_status"] = prototype.get("status")
+        payload["output_class"] = "Public-data + disclosed-assumption FCFF/DCF scenario sensitivity"
+        payload["evidence_grade"] = "Issuer Scope 1/2/3, SEC PP&E/FCFF, FEMA EAL and CIE pathways separated from financial-conversion assumptions"
+        payload["permitted_use"] = "Long-horizon scenario comparison, peer research, risk budgeting, and issuer engagement; no price target or automatic position"
+        payload["calibration_notice"] = (
+            "Company-reported Scope 1/2/3, SEC cash flow and PP&E, official NGFS transition paths, FEMA expected annual loss rates, CIE heat-productivity pathways, market beta, and Treasury data form the public-data layer. "
+            "Policy incidence, pass-through, emissions decline, PP&E allocation, insurance/adaptation, labour conversion, macro elasticity, ERP, and terminal growth are explicit Low/Base/High assumptions."
+        )
+    return payload
 
 
 def issuer_exposure_model(symbol, asset_type, sector, climate_risk, transition, state, stats):
@@ -2708,12 +4469,15 @@ def historical_climate_pressure_for_year(year, climate_rows=None):
 def climate_source_rows(daily_signal=None, context=None):
     daily_signal = daily_signal or load_daily_climate_signal()
     context = context or climate_data_context()
+    treasury = latest_official_treasury_rate("10y")
+    ngfs = latest_official_ngfs_transition()
+    sec_history = latest_official_sec_financial_history()
     rows = []
     for item in CLIMATE_DATA_SOURCE_CATALOG:
         status = item["status"]
         mode = "Client reference"
         if item["name"] == "NWS Active Alerts":
-            status = daily_signal.get("source_mode", status)
+            status = daily_signal.get("decision_status", daily_signal.get("source_mode", status))
             mode = "Live model input"
         elif item["name"] in {"NASA GISTEMP", "NOAA NCEI Billion-Dollar Disasters"}:
             status = context.get("source_mode", status)
@@ -2721,10 +4485,31 @@ def climate_source_rows(daily_signal=None, context=None):
         elif item["name"] == "NOAA GML CO2":
             status = context.get("source_mode", status)
             mode = "Context only - excluded from transition score"
-        elif item["name"] in {"EPA GHGRP", "EPA eGRID", "EIA Open Data", "NGFS Scenarios", "SEC EDGAR APIs"}:
+        elif item["name"] == "NGFS Scenarios":
+            status = (
+                f"Observed official | Phase {ngfs['source_release']} | USA transition | {ngfs['release_id']}"
+                if ngfs.get("is_loaded")
+                else "Not loaded — project scenario calibration remains isolated"
+            )
+            mode = "Official transition pathway input; issuer translation blocked"
+        elif item["name"] == "SEC EDGAR APIs":
+            status = (
+                f"Observed official | {sec_history['start_period']}-{sec_history['end_period']} | "
+                f"{sec_history['fact_count']:,} facts | {sec_history['release_id']}"
+                if sec_history.get("is_loaded")
+                else "Not loaded — issuer financial baseline unavailable"
+            )
+            mode = "Official financial-history input; accounting/FCFF tie-out pending"
+        elif item["name"] in {"EPA GHGRP", "EPA eGRID", "EIA Open Data"}:
             mode = "Transition-risk source"
         elif item["name"] in {"BEA GDP by Industry", "BEA Input-Output Accounts", "FRED / ALFRED"}:
             mode = "Macro transmission source"
+        elif item["name"] == "U.S. Treasury Daily Rates":
+            if treasury.get("rate") is not None:
+                status = f"Observed official | 10Y {treasury['rate']:.2%} | {treasury['as_of']} | {treasury['release_id']}"
+            else:
+                status = "Not loaded — valuation fallback remains active"
+            mode = "Valuation input — risk-free leg only"
         else:
             mode = "Physical-risk source"
         rows.append(
@@ -2786,7 +4571,7 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
                         "physical_risk": round(physical, 4),
                         "transition_risk": transition["risk"],
                         "combined_risk": round(combined, 4),
-                        "action": "Hedge / reduce" if combined >= 0.68 else ("Watch closely" if combined >= 0.46 else "Monitor"),
+                        "action": "High proxy stress" if combined >= 0.68 else ("Medium proxy stress" if combined >= 0.46 else "Low proxy stress"),
                         "driver": row.get("daily_driver") or transition.get("status"),
                     }
                 )
@@ -2821,8 +4606,8 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
             {"step": "Country scenarios", "output": "Target minus reference acute, chronic, and transition paths"},
             {"step": "Downscaling", "output": "Sector vulnerability plus issuer fixed-asset and labor-intensity proxies"},
             {"step": "Valuation", "output": "Climate-adjusted cash flows discounted into an as-of-date value impact"},
-            {"step": "Event nowcast", "output": "NWS hazard intensity becomes a separate tactical selection overlay"},
-            {"step": "Validation", "output": "Walk-forward backtest, market-only ablation, and parameter sensitivity"},
+            {"step": "Hazard context", "output": "NWS alert severity remains a unitless monitor and does not create issuer loss or a trade"},
+            {"step": "Validation", "output": "Engineering checks pass; external calibration and independent model validation remain pending"},
         ],
         "calculation_rules": {
             "physical_pressure": "0.58 acute NWS state + 0.42 chronic official-data state",
@@ -2835,25 +4620,25 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
                 "layer": "Live physical event nowcast",
                 "coverage": "NWS alert type, intensity, and affected area",
                 "status": "Operational",
-                "decision_use": "Tactical sector and security selection overlay",
+                "decision_use": "Hazard monitoring only; no issuer loss, probability, or trade",
             },
             {
                 "layer": "Chronic physical state",
                 "coverage": "NASA temperature and NCEI disaster history; NOAA CO2 shown as context only",
                 "status": "Operational",
-                "decision_use": "Regime and long-run physical-pressure calibration",
+                "decision_use": "Climate-state context; not issuer financial loss",
             },
             {
                 "layer": "Scenario repricing",
                 "coverage": "Target-reference acute, chronic, and transition paths",
                 "status": "Calibrated proxy",
-                "decision_use": "Conditional value impact and portfolio stress",
+                "decision_use": "Sector research stress pending official NGFS ingestion",
             },
             {
                 "layer": "Issuer downscaling",
                 "coverage": "Sector sensitivity, fixed-asset and labor-intensity ratios",
                 "status": "Proxy",
-                "decision_use": "Security-level cash-flow and tail-risk estimate",
+                "decision_use": "Not issuer-specific; display-only research fallback",
             },
             {
                 "layer": "Facility geolocation",
@@ -2872,11 +4657,7 @@ def climate_intelligence_payload(latest_alloc=None, daily_signal=None, cvor_summ
             f"{daily_signal.get('top_driver', 'climate').replace('_', ' ')} is the top daily driver; "
             f"transition pressure is {'high' if transition_score >= 0.62 else 'moderate' if transition_score >= 0.38 else 'low'}."
         ),
-        "client_action": (
-            "Reduce climate concentration and keep the scenario-tail guardrail active"
-            if decision_score >= 0.66
-            else ("Hold core exposures, raise monitoring on affected sectors" if decision_score >= 0.44 else "Maintain allocation with routine monitoring")
-        ),
+        "client_action": "Review scenario drivers, evidence coverage, and missing issuer data; no allocation action is authorized.",
         "top_affected": top_affected,
         "source_rows": source_rows,
     }
@@ -3848,6 +5629,17 @@ def top_sample_area(daily_signal, category):
 
 
 def daily_climate_alert_rows(daily_signal):
+    if not short_term_hazard_is_calculable(daily_signal):
+        return [
+            {
+                "driver": "unavailable",
+                "driver_label": "Live NWS hazard data unavailable",
+                "count": None,
+                "intensity": None,
+                "reminder": "Not calculable; no tactical climate trade is permitted.",
+                "sample_area": "-",
+            }
+        ]
     counts = daily_signal.get("category_counts", {}) or {}
     rows = []
     for category in DAILY_ALERT_CATEGORY_WEIGHTS:
@@ -3868,11 +5660,11 @@ def daily_climate_alert_rows(daily_signal):
     if not rows:
         rows.append(
             {
-                "driver": "long_run",
-                "driver_label": "Long-run climate pressure",
+                "driver": "observed_zero",
+                "driver_label": "No matched active NWS hazards",
                 "count": 0,
-                "intensity": round(safe_float(daily_signal.get("allocation_pressure"), 0.0), 4),
-                "reminder": "Use official temperature, CO2, and disaster-frequency inputs as the base climate risk signal.",
+                "intensity": 0.0,
+                "reminder": "Observed zero from a successful NWS response; no tactical climate trade.",
                 "sample_area": "-",
             }
         )
@@ -3887,11 +5679,14 @@ def daily_climate_board_payload():
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "source_mode": daily_signal.get("source_mode", "-"),
         "source_url": daily_signal.get("source_url", NWS_ACTIVE_ALERTS_URL),
-        "alerts_total": daily_signal.get("alerts_total", 0),
-        "climate_alerts": daily_signal.get("climate_alerts", 0),
-        "top_driver": daily_signal.get("top_driver", "none"),
-        "daily_pressure": daily_signal.get("daily_pressure", 0.0),
-        "allocation_pressure": daily_signal.get("allocation_pressure", 0.0),
+        "alerts_total": daily_signal.get("alerts_total"),
+        "climate_alerts": daily_signal.get("climate_alerts"),
+        "top_driver": daily_signal.get("top_driver", "unavailable"),
+        "daily_pressure": daily_signal.get("daily_pressure"),
+        "allocation_pressure": daily_signal.get("allocation_pressure"),
+        "is_calculable": short_term_hazard_is_calculable(daily_signal),
+        "observed_zero": bool(daily_signal.get("observed_zero")),
+        "decision_status": daily_signal.get("decision_status", "-"),
         "active_themes": active_themes,
         "daily_alerts": alert_rows,
     }
@@ -4509,28 +6304,7 @@ def max_drawdown(values):
 
 
 def guess_sector(ticker):
-    mapping = {
-        "AAPL": "Technology",
-        "MSFT": "Technology",
-        "NVDA": "Technology",
-        "XOM": "Energy",
-        "CVX": "Energy",
-        "JPM": "Financial Services",
-        "BAC": "Financial Services",
-        "NEE": "Utilities",
-        "DUK": "Utilities",
-        "CAT": "Industrials",
-        "DE": "Industrials",
-        "TRV": "Financial Services",
-        "CB": "Financial Services",
-        "FSLR": "Technology",
-        "ENPH": "Technology",
-        "AMZN": "Consumer Cyclical",
-        "GOOGL": "Communication Services",
-        "META": "Communication Services",
-        "TSLA": "Consumer Cyclical",
-    }
-    return mapping.get(ticker, "Technology")
+    return resolve_issuer_sector(ticker, requested_sector=None).get("resolved_sector")
 
 
 def build_payload():
@@ -4552,7 +6326,7 @@ def build_payload():
     latest_regime = regime_for_year(latest_year, climate_rows)
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "platform": "Jennison Climate-Finance Trading & Risk Platform",
+        "platform": "Jennison Climate-Risk Research Platform",
         "climate_source": "NWS + NASA/NOAA/NCEI official inputs, with FEMA/EPA/EIA/NGFS/SEC source-ready risk mapping",
         "market_source": market_source,
         "methodology": "Target-reference climate scenario repricing plus a separate NWS event-nowcast overlay",
@@ -4562,7 +6336,7 @@ def build_payload():
             "transition_downscaling": "Transition FCFF separates carbon cost, demand shift, energy cost, transition CapEx, and pass-through. Atmospheric CO2 is excluded from transition scoring.",
             "valuation": "Scenario-conditioned cash flows are discounted into an as-of-date value impact relative to a chosen reference scenario.",
             "probability": "No occurrence probabilities are assigned to NGFS-style scenarios.",
-            "short_term": "NWS alerts affect event selection risk and tactical portfolio basis points, not long-run scenario probability.",
+            "short_term": "NWS alerts provide current hazard context only. They do not establish issuer exposure, probability, financial loss, or a portfolio decision.",
         },
         "portfolio_value": DEFAULT_PORTFOLIO_VALUE,
         "latest_regime": latest_regime,
@@ -4588,7 +6362,7 @@ HTML = r"""<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jennison Climate-Finance Trading & Risk Platform</title>
+  <title>Jennison Climate-Risk Research Platform</title>
   <style>
     :root {
       --bg:#f5f7fb; --panel:#ffffff; --panel2:#f9fbff; --line:#dbe3ef; --text:#172033;
@@ -4694,10 +6468,17 @@ HTML = r"""<!doctype html>
     details.advanced-box{border:1px solid #dbe3ef;border-radius:8px;background:#fbfdff;padding:8px;margin:8px 0}
     details.advanced-box summary{cursor:pointer;font-weight:850;color:#25324a}
     .auto-universe-note{border:1px solid #dbe3ef;border-radius:8px;background:#f7fbff;padding:9px;color:#52627c;font-size:12px;line-height:1.45;margin:8px 0}
-    .model-lab-controls{display:grid;grid-template-columns:1.05fr 1.25fr 1.25fr .8fr 1fr 1fr auto;gap:8px;align-items:end}
+    .model-lab-controls{display:grid;grid-template-columns:1.25fr 1.25fr .7fr 1fr .8fr auto;gap:8px;align-items:end}
+    .issuer-demo-strip{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:7px;margin:12px 0 16px}
+    .issuer-demo-card{border:1px solid var(--line);background:#fff;border-radius:8px;padding:9px 8px;text-align:left;cursor:pointer;min-height:82px}
+    .issuer-demo-card:hover,.issuer-demo-card.active{border-color:var(--blue);box-shadow:0 3px 12px rgba(36,99,235,.12)}
+    .issuer-demo-card b{display:block;font-size:14px;color:#173d7a}.issuer-demo-card span{display:block;font-size:10px;color:var(--muted);margin-top:3px}
+    #summary-section,#climate-data-section{display:none!important}
+    a[href="#climate-data-section"]{display:none!important}
+    .lab-split{grid-template-columns:1fr!important}
     .model-lab-controls label{margin-bottom:4px}
     .model-lab-controls button{height:36px;white-space:nowrap}
-    .method-flow{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid #dbe3ef;border-radius:8px;background:#f8fbff;margin:10px 0;overflow:hidden}
+    .method-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid #dbe3ef;border-radius:8px;background:#f8fbff;margin:10px 0;overflow:hidden}
     .method-step{padding:10px 11px;min-height:78px;border-right:1px solid #dbe3ef}
     .method-step:last-child{border-right:0}
     .method-step .number{font-size:11px;font-weight:850;color:#2563eb;text-transform:uppercase}
@@ -4716,9 +6497,44 @@ HTML = r"""<!doctype html>
     .attribution-track span{display:block;height:100%;border-radius:999px;background:#d93025}
     .attribution-track span.positive{background:#078a4f}
     .lab-status{display:inline-flex;align-items:center;border:1px solid #c9d8ea;border-radius:999px;padding:3px 7px;font-size:11px;color:#52627c;background:#fff}
-    #modelAttributionTable,#modelHazardTable,#modelResolutionTable,#modelInstrumentTable,#modelCalculationTable{min-width:720px}
-    @media (max-width:1320px){.model-lab-controls{grid-template-columns:repeat(4,minmax(0,1fr))}.method-flow{grid-template-columns:repeat(3,minmax(0,1fr))}.method-step:nth-child(3){border-right:0}.method-step:nth-child(-n+3){border-bottom:1px solid #dbe3ef}.lab-kpi{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media (max-width:1100px){header{position:relative}.layout{grid-template-columns:1fr}.grid.kpi,.grid.two,.grid.three,.grid.four,.client-summary,.split-table,.lab-split{grid-template-columns:1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.method-flow{grid-template-columns:1fr 1fr}.method-step{border-bottom:1px solid #dbe3ef}.method-step:nth-child(odd){border-right:1px solid #dbe3ef}.method-step:nth-child(even){border-right:0}.lab-column+ .lab-column{padding-left:0;border-left:0}.lab-kpi{grid-template-columns:1fr 1fr}aside{position:relative;top:0;height:auto}.kpi-value{font-size:21px}table{min-width:760px}}
+    .research-governance{border:1px solid #c8a25a;border-left:4px solid #a85d00;background:#fff8e8;padding:10px 12px;margin:10px 0;color:#4b3a1d;line-height:1.5}
+    .research-governance strong{display:block;margin-bottom:2px}
+    .quant-section-head{display:flex;align-items:center;gap:9px;margin:18px 0 8px;font-size:13px;font-weight:850}
+    .quant-section-head span{display:inline-grid;place-items:center;width:24px;height:24px;background:var(--black);color:#fff;font-size:10px}
+    .risk-channel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .risk-channel-card{position:relative;border:1px solid var(--line);background:#fff;padding:14px;min-height:150px;overflow:hidden}
+    .risk-channel-card::before{content:"";position:absolute;left:0;top:0;width:100%;height:3px;background:var(--electric)}
+    .risk-channel-card.physical::before{background:var(--pink)}
+    .risk-channel-card.transition::before{background:var(--cyan)}
+    .risk-channel-card.macro::before{background:var(--acid)}
+    .risk-card-kicker{font-size:9px;font-weight:850;text-transform:uppercase;color:var(--muted)}
+    .risk-card-rate{font-size:29px;font-weight:900;line-height:1;margin:8px 0 3px;color:var(--red)}
+    .risk-card-rate.green{color:var(--green)}.risk-card-rate.blue{color:#173d7a}
+    .risk-card-money{font-size:15px;font-weight:850}
+    .risk-card-formula{margin-top:10px;padding:8px;background:#f6f7f3;border-left:2px solid var(--line);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px}
+    .risk-card-components{margin-top:9px;color:var(--muted);font-size:10px;line-height:1.5}
+    .risk-card-source{display:inline-block;margin-top:8px;padding:2px 6px;border:1px solid var(--line);font-size:9px;font-weight:800;text-transform:uppercase;color:#555851}
+    .decision-bridge-grid{display:grid;grid-template-columns:1.5fr .85fr;gap:10px}
+    .cashflow-bridge{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--line);background:#fff}
+    .cashflow-stage{position:relative;padding:13px 12px;min-height:110px;border-right:1px solid var(--line)}
+    .cashflow-stage:last-child{border-right:0;background:#f2f7ff}
+    .cashflow-stage:not(:last-child)::after{content:"→";position:absolute;right:-9px;top:42px;z-index:2;width:18px;height:18px;text-align:center;background:#fff;font-weight:900;color:var(--electric)}
+    .cashflow-stage .stage-label{font-size:9px;text-transform:uppercase;color:var(--muted);font-weight:800}
+    .cashflow-stage .stage-value{font-size:18px;font-weight:900;margin-top:8px}
+    .cashflow-stage .stage-note{font-size:9px;color:var(--muted);margin-top:5px;line-height:1.35}
+    .valuation-card{border:1px solid var(--line);background:var(--black);color:#fff;padding:14px;min-height:110px}
+    .valuation-card .label{font-size:9px;text-transform:uppercase;color:#bfc2bb;font-weight:800}
+    .valuation-card .value{font-size:29px;font-weight:900;margin:7px 0}
+    .valuation-card .detail{font-size:10px;color:#d6d8d2;line-height:1.45}
+    .investment-impact-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .investment-impact-card{border-top:3px solid var(--electric);background:#fff;padding:12px;border-left:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-height:102px}
+    .investment-impact-card .label{font-size:9px;text-transform:uppercase;color:var(--muted);font-weight:850}
+    .investment-impact-card .headline{font-size:16px;font-weight:900;margin:7px 0}
+    .investment-impact-card .copy{font-size:10px;color:#555851;line-height:1.5}
+    .research-sandbox{display:none!important}
+    #modelAttributionTable,#modelResolutionTable,#modelInstrumentTable,#modelCalculationTable,#issuerCalculationTable{min-width:720px}
+    @media (max-width:1320px){.issuer-demo-strip{grid-template-columns:repeat(4,minmax(0,1fr))}.model-lab-controls{grid-template-columns:repeat(4,minmax(0,1fr))}.method-flow{grid-template-columns:repeat(4,minmax(0,1fr))}.lab-kpi{grid-template-columns:repeat(3,minmax(0,1fr))}.decision-bridge-grid{grid-template-columns:1fr}.investment-impact-grid{grid-template-columns:1fr 1fr}}
+    @media (max-width:1100px){header{position:relative}.layout{grid-template-columns:1fr}.grid.kpi,.grid.two,.grid.three,.grid.four,.client-summary,.split-table,.lab-split,.risk-channel-grid{grid-template-columns:1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.method-flow{grid-template-columns:1fr 1fr}.method-step{border-bottom:1px solid #dbe3ef}.method-step:nth-child(odd){border-right:1px solid #dbe3ef}.method-step:nth-child(even){border-right:0}.lab-column+ .lab-column{padding-left:0;border-left:0}.lab-kpi{grid-template-columns:1fr 1fr}.cashflow-bridge{grid-template-columns:1fr}.cashflow-stage{border-right:0;border-bottom:1px solid var(--line)}.cashflow-stage:not(:last-child)::after{content:"↓";right:50%;top:auto;bottom:-9px}.investment-impact-grid{grid-template-columns:1fr}aside{position:relative;top:0;height:auto}.kpi-value{font-size:21px}table{min-width:760px}}
 
     /* Institutional research workspace: hard-edged light, quiet data density. */
     :root{
@@ -4816,7 +6632,7 @@ HTML = r"""<!doctype html>
     .technical-details summary{cursor:pointer;font-weight:800;font-size:11px;text-transform:uppercase}
     @media (max-width:1320px){.risk-budget-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.decision-grid{grid-template-columns:1fr 1fr}.institution-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.control-wide{grid-column:span 1}}
     @media (max-width:1100px){header{position:sticky}.layout{grid-template-columns:1fr;padding:0 14px 30px;gap:12px}aside{position:relative;top:0;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:10px 0}.side-nav{display:flex;overflow-x:auto;margin:0}.side-nav a{flex:0 0 auto;border-left:0;border-bottom:2px solid transparent}.side-nav a:hover{border-left:0;border-bottom-color:var(--electric)}.side-block{display:none}main{padding-top:10px}.grid.kpi{grid-template-columns:repeat(3,minmax(0,1fr))}.client-summary{grid-template-columns:1fr}.institution-controls{grid-template-columns:1fr 1fr}.model-lab-controls{grid-template-columns:1fr 1fr}.split-table,.lab-split{grid-template-columns:1fr}.lab-column+.lab-column{padding-left:0;border-left:0}.panel-head>span:last-child{max-width:48%}}
-    @media (max-width:640px){header{padding:0 12px;min-height:54px}header .badge:not(#timeBadge){display:none}h1{font-size:13px}.layout{padding:0 10px 24px}.grid.kpi{grid-template-columns:1fr 1fr}.kpi-card{min-height:76px}.decision-grid,.risk-budget-grid,.institution-controls,.model-lab-controls,.lab-kpi{grid-template-columns:1fr}.grid.two,.grid.three,.grid.four{grid-template-columns:1fr}.method-flow{grid-template-columns:1fr}.method-step{border-right:0;border-bottom:1px solid var(--line)}.panel-head{align-items:flex-start;gap:10px}.panel-head>span:last-child{font-size:8px}.client-callout .headline{font-size:24px}table{min-width:700px}}
+    @media (max-width:640px){.issuer-demo-strip{grid-template-columns:repeat(2,minmax(0,1fr))}header{padding:0 12px;min-height:54px}header .badge:not(#timeBadge){display:none}h1{font-size:13px}.layout{padding:0 10px 24px}.grid.kpi{grid-template-columns:1fr 1fr}.kpi-card{min-height:76px}.decision-grid,.risk-budget-grid,.institution-controls,.model-lab-controls,.lab-kpi{grid-template-columns:1fr}.grid.two,.grid.three,.grid.four{grid-template-columns:1fr}.method-flow{grid-template-columns:1fr}.method-step{border-right:0;border-bottom:1px solid var(--line)}.panel-head{align-items:flex-start;gap:10px}.panel-head>span:last-child{font-size:8px}.client-callout .headline{font-size:24px}table{min-width:700px}}
 
     /* Typography and color refinement: research-report restraint over dashboard decoration. */
     :root{
@@ -4897,12 +6713,60 @@ HTML = r"""<!doctype html>
     #model-lab-section{order:5}#cvor-section{order:6}#climate-data-section{order:7}
     @media (max-width:1100px){.validation-controls{grid-template-columns:1fr 1fr}.validation-controls .window-tabs{grid-column:1/-1}.client-summary{gap:12px}#dailyRecoSummary{grid-template-columns:repeat(2,minmax(0,1fr))}#dailyRecoSummary .signal-card:nth-child(4n+1){border-left:1px solid var(--line)}#dailyRecoSummary .signal-card:nth-child(2n+1){border-left:0}}
     @media (max-width:640px){body{font-size:12px}header{min-height:56px}h1{font-size:13px;font-weight:650}.panel-head>span:first-child{font-size:16px}.panel-head>span:last-child{font-size:9.5px}.grid.kpi{gap:8px}.kpi-card{min-height:78px}.kpi-label,.signal-card .label{font-size:10px}.kpi-value{font-size:21px}.client-callout .headline{font-size:27px}.validation-controls{grid-template-columns:1fr}.validation-controls .window-tabs{grid-column:auto}.decision-grid{gap:8px}#dailyRecoSummary .signal-card{padding:11px 8px}.validation-primary .value{font-size:21px}}
+
+    /* Client demo view: one restrained valuation page, with technical detail on demand. */
+    #regimeBadge,#sourceBadge,#timeBadge,#client-section,#cvor-section{display:none!important}
+    .header-context{margin-left:auto;color:var(--muted);font-size:11px}
+    .layout{display:block;max-width:1480px;padding:0 32px 40px}
+    aside{display:none}
+    main{padding-top:22px;gap:0}
+    #model-lab-section{order:1;border-top-color:#8f999f}
+    #model-lab-section::before{background:#355a8a}
+    #model-lab-section .panel-body{padding-top:14px}
+    #modelGovernanceBanner{padding:0 0 11px;border-top:0;color:#6b747b}
+    .issuer-demo-strip{grid-template-columns:repeat(8,minmax(0,1fr));gap:0;margin:9px 0 15px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+    .issuer-demo-card{min-height:54px;border:0;border-left:1px solid var(--line);border-radius:0;padding:9px 10px;background:transparent}
+    .issuer-demo-card:first-child{border-left:0}
+    .issuer-demo-card:hover,.issuer-demo-card.active{border-color:var(--line);background:#eef2f5;box-shadow:none}
+    .issuer-demo-card.active{box-shadow:inset 0 -2px 0 #355a8a}
+    .issuer-demo-card b{font-size:14px;color:#274a72}.issuer-demo-card span{font-size:10.5px;margin-top:2px}
+    .model-lab-controls{grid-template-columns:1.35fr 1.35fr .65fr .75fr .75fr auto;gap:9px}
+    #modelSectorStatus,#ngfsTransitionEvidence{display:none!important}
+    #issuerFinancialEvidence{padding:10px 0 0;border:0;color:#68737d}
+    .quant-section-head{margin:16px 0 6px;font-size:13px}
+    .quant-section-head span{width:20px;height:20px;background:#293946;font-size:9px}
+    #issuerCompanyInfo{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .risk-channel-grid{gap:18px}
+    .risk-channel-card{border:0;border-top:1px solid var(--line);background:transparent;padding:12px 2px;min-height:112px}
+    .risk-channel-card::before{display:none}
+    .risk-card-kicker{font-size:10.5px;text-transform:none;color:#68737d}
+    .risk-card-rate{font-size:26px;font-weight:650;margin:7px 0 3px}
+    .risk-card-money{font-size:14px;font-weight:650}
+    .risk-card-formula{margin-top:7px;padding:0;border:0;background:transparent;font-family:inherit;font-size:10.5px;color:#68737d}
+    .risk-card-source{display:none}
+    .decision-bridge-grid{grid-template-columns:1.55fr .75fr;gap:16px}
+    .cashflow-bridge{border-color:var(--line)}
+    .cashflow-stage{min-height:94px;padding:12px 10px}
+    .cashflow-stage .stage-value{font-size:17px;font-weight:650}
+    .valuation-card{min-height:94px;background:#fff;color:var(--text);border:1px solid var(--line);border-left:4px solid #355a8a;padding:13px}
+    .valuation-card .label{font-size:10px;text-transform:none;color:#68737d}
+    .valuation-card .value{font-size:27px;font-weight:650;color:var(--red)}
+    .valuation-card .detail{font-size:10.5px;color:#68737d}
+    .investment-impact-grid{gap:18px}
+    .investment-impact-card{min-height:78px;padding:11px 2px;background:transparent;border:0;border-top:1px solid var(--line)}
+    .investment-impact-card .label{font-size:10px;text-transform:none}
+    .investment-impact-card .headline{font-size:15px;font-weight:650;margin:6px 0 3px}
+    .investment-impact-card .copy{font-size:10.5px;line-height:1.35}
+    #issuerCalculationDisclosure{margin-top:16px}
+    @media (max-width:1100px){.layout{padding:0 18px 30px}.issuer-demo-strip{grid-template-columns:repeat(4,minmax(0,1fr))}.issuer-demo-card:nth-child(5){border-left:0}.model-lab-controls{grid-template-columns:1fr 1fr 1fr}#issuerCompanyInfo{grid-template-columns:1fr 1fr}.decision-bridge-grid{grid-template-columns:1fr}}
+    @media (max-width:640px){.header-context{display:none}.layout{padding:0 12px 24px}.issuer-demo-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.issuer-demo-card:nth-child(odd){border-left:0}.model-lab-controls,#issuerCompanyInfo{grid-template-columns:1fr 1fr}.risk-channel-grid,.investment-impact-grid{grid-template-columns:1fr;gap:6px}}
   </style>
 </head>
 <body>
 <header>
   <div class="light-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-  <h1>Jennison Climate-Finance Trading & Risk Platform</h1>
+  <h1>Jennison Climate-Risk Research Platform</h1>
+  <span class="header-context">Long-term scenario valuation prototype</span>
   <span class="badge" id="regimeBadge">Loading regime...</span>
   <span class="badge" id="sourceBadge">Sources loading</span>
   <span style="margin-left:auto" class="badge" id="timeBadge">-</span>
@@ -4910,22 +6774,20 @@ HTML = r"""<!doctype html>
 <div class="layout">
   <aside>
     <nav class="side-nav" aria-label="Research workspace sections">
-      <a href="#client-section">Investment View <span>Decision</span></a>
-      <a href="#optimizer-section">Portfolio <span>Risk Budget</span></a>
-      <a href="#daily-reco-backtest-section">Validation <span>Net of costs</span></a>
+      <a href="#client-section">Evidence View <span>Research</span></a>
       <a href="#model-lab-section">Scenario Lab <span>Repricing</span></a>
-      <a href="#cvor-section">Stress Matrix <span>Tail</span></a>
+      <a href="#cvor-section">Stress Matrix <span>Conditional</span></a>
       <a href="#climate-data-section">Climate Signals <span>Lineage</span></a>
     </nav>
     <div class="side-block">
       <div class="side-kicker">Research objective</div>
-      <div class="side-value">Climate-aware portfolio risk with explicit budgets</div>
-      <div class="side-copy">Country-to-security repricing, live event transmission, portfolio construction, and point-in-time validation.</div>
+      <div class="side-value">Transparent conditional climate research</div>
+      <div class="side-copy">Scenario, sector, issuer, and data-gap evidence are separated. No automatic investment recommendation is produced.</div>
     </div>
     <div class="side-block">
       <div class="side-kicker">Model status</div>
-      <div class="side-value" id="sideModelStatus">Conditional, not probabilistic</div>
-      <div class="side-copy">Scenario tail, pressure scores, and market risk remain separate to prevent double counting.</div>
+      <div class="side-value" id="sideModelStatus">Research only — not promoted</div>
+      <div class="side-copy">Current scenario and issuer outputs are project-calibrated sensitivities, not forecasts, probabilities, or audited losses.</div>
     </div>
     <div class="side-block">
       <div class="side-kicker">Coverage discipline</div>
@@ -4938,37 +6800,32 @@ HTML = r"""<!doctype html>
   </aside>
   <main>
     <section class="grid kpi" id="summary-section">
-      <div class="kpi-card"><div class="kpi-label">Portfolio state</div><div id="kpiRegime" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Research regime</div><div id="kpiRegime" class="kpi-value">-</div></div>
       <div class="kpi-card"><div class="kpi-label">Live NWS alerts</div><div id="kpiScore" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">NWS event pressure</div><div id="kpiReturn" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">NWS pressure index</div><div id="kpiReturn" class="kpi-value">-</div></div>
       <div class="kpi-card"><div class="kpi-label">Primary hazard</div><div id="kpiExcess" class="kpi-value">-</div></div>
       <div class="kpi-card"><div class="kpi-label">Climate vintage</div><div id="kpiDrawdown" class="kpi-value">-</div></div>
-      <div class="kpi-card"><div class="kpi-label">Scenario tail</div><div id="kpiCvor" class="kpi-value">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">Model stage</div><div id="kpiCvor" class="kpi-value">Research only</div></div>
     </section>
 
     <section class="panel accent-acid" id="client-section">
-      <div class="panel-head"><span>Investment Committee View</span><span id="clientSummaryTag">Decision, evidence, confidence</span></div>
+      <div class="panel-head"><span>Research Evidence Overview</span><span id="clientSummaryTag">Evidence grade and permitted use</span></div>
       <div class="panel-body">
         <div id="clientSummary" class="client-summary"></div>
         <div id="investmentCommitteeStrip" class="decision-grid"></div>
-        <div class="section-title" style="margin-top:14px">Holdings requiring committee attention</div>
-        <table id="clientAffectedTable"></table>
+        <div class="research-governance"><strong>Governance boundary</strong>Engineering output is available for research review only. Model promotion, portfolio tilts, tactical overlays, and security recommendations are not authorized.</div>
       </div>
     </section>
 
     <section class="panel accent-pink" id="model-lab-section">
-      <div class="panel-head"><span>Scenario Repricing &amp; Event Transmission</span><span id="modelLabTag">Country -> sector -> issuer -> portfolio</span></div>
+      <div class="panel-head"><span>Long-Term Climate Valuation</span><span id="modelLabTag">Scenario → FCFF → value</span></div>
       <div class="panel-body">
+        <div class="disclosure-line" id="modelGovernanceBanner">Eight issuers · observed inputs · visible Low/Base/High assumptions</div>
+        <div class="section-title">Select issuer</div>
+        <div id="issuerDemoStrip" class="issuer-demo-strip"></div>
         <div class="model-lab-controls">
-          <div>
-            <label for="modelScope">Analysis scope</label>
-            <select id="modelScope" onchange="updateModelControlState()">
-              <option value="portfolio">Portfolio</option>
-              <option value="issuer">Issuer</option>
-              <option value="sector">Sector</option>
-              <option value="country">Country</option>
-            </select>
-          </div>
+          <input type="hidden" id="modelScope" value="issuer">
+          <input type="hidden" id="modelSector" value="Technology">
           <div>
             <label for="modelTarget">Target scenario</label>
             <select id="modelTarget">
@@ -4998,67 +6855,54 @@ HTML = r"""<!doctype html>
             </select>
           </div>
           <div>
-            <label for="modelSector">Sector</label>
-            <select id="modelSector">
-              <option value="Technology">Technology</option>
-              <option value="Energy">Energy</option>
-              <option value="Utilities">Utilities</option>
-              <option value="Industrials">Industrials</option>
-              <option value="Financials">Financials</option>
-              <option value="Real Estate">Real Estate</option>
-              <option value="Basic Materials">Basic Materials</option>
-              <option value="Consumer Cyclical">Consumer Cyclical</option>
-              <option value="Consumer Defensive">Consumer Defensive</option>
-              <option value="Healthcare">Healthcare</option>
-              <option value="Communication Services">Communication Services</option>
-            </select>
-          </div>
-          <div>
             <label for="modelTicker">Issuer ticker</label>
             <input id="modelTicker" value="AAPL" maxlength="12">
           </div>
+          <div>
+            <label for="modelAssumptionCase">Assumption case</label>
+            <select id="modelAssumptionCase">
+              <option value="low">Low</option>
+              <option value="base" selected>Base</option>
+              <option value="high">High</option>
+            </select>
+          </div>
           <button onclick="loadClimateModelLab()">Run Model</button>
         </div>
-
-        <div class="model-rule">
-          <strong>Quant rule</strong>
-          <span>Strategic valuation uses country GDP -> sector demand/input-output -> issuer FCFF. Tactical loss = hazard severity x exposure x vulnerability x (1-resilience). CO2 concentration is excluded from transition risk.</span>
+        <div id="modelSectorStatus" class="disclosure-line"></div>
+        <div id="ngfsTransitionEvidence" class="disclosure-line"></div>
+        <div id="issuerFinancialEvidence" class="disclosure-line"></div>
+        <div id="issuerPilotEvidence" class="research-governance" style="display:none"></div>
+        <div class="quant-section-head" id="issuerCompanyInfoTitle" style="display:none"><span>01</span>Company financial baseline</div>
+        <div id="issuerCompanyInfo" class="grid lab-kpi"></div>
+        <div id="issuerDecisionView" style="display:none">
+          <div class="quant-section-head"><span>02</span>What changes FCFF</div>
+          <div id="issuerRiskCards" class="risk-channel-grid"></div>
+          <div class="quant-section-head"><span>03</span>From FCFF to value</div>
+          <div class="decision-bridge-grid">
+            <div id="issuerCashFlowBridge" class="cashflow-bridge"></div>
+            <div id="issuerValuationCard" class="valuation-card"></div>
+          </div>
+          <div class="quant-section-head"><span>04</span>Investment use</div>
+          <div id="issuerInvestmentImpact" class="investment-impact-grid"></div>
         </div>
-
-        <div class="method-flow" aria-label="Climate model pipeline">
-          <div class="method-step"><div class="number">01 Input</div><div class="name">Target vs reference</div><div class="detail">NGFS-style acute, chronic, macro and demand paths</div></div>
-          <div class="method-step"><div class="number">02 Country</div><div class="name">Macro path</div><div class="detail">GDP, inflation, unemployment, energy and physical losses</div></div>
-          <div class="method-step"><div class="number">03 Sector</div><div class="name">Transmission</div><div class="detail">BEA-style demand and input-output beta</div></div>
-          <div class="method-step"><div class="number">04 Issuer</div><div class="name">Cash-flow impact</div><div class="detail">Carbon, demand, energy, CapEx and pass-through channels</div></div>
-          <div class="method-step"><div class="number">05 Valuation</div><div class="name">As-of-date repricing</div><div class="detail">Company beta WACC and scenario FCFF path</div></div>
-          <div class="method-step"><div class="number">06 Decision</div><div class="name">Strategic + tactical</div><div class="detail">Long-term value tilt plus NWS event overlay</div></div>
-        </div>
+        <details class="advanced-box" id="issuerCalculationDisclosure" style="display:none">
+          <summary>Inputs, assumptions and calculation detail</summary>
+          <div class="quant-section-head" id="issuerCalculationTitle"><span>05</span>Calculation detail and reconciliation</div>
+          <table id="issuerCalculationTable"></table>
+        </details>
 
         <div id="modelLabSummary" class="grid lab-kpi"></div>
-        <div class="lab-split">
-          <div class="lab-column">
+        <div class="lab-column" id="modelLegacyLong">
             <h3>Long-term: scenario-conditioned value</h3>
             <div id="modelLongHeadline" class="hint"></div>
             <div id="modelLongAttributionBars" class="attribution-list"></div>
-          </div>
-          <div class="lab-column">
-            <h3>Short-term: NWS event nowcast</h3>
-            <div id="modelShortHeadline" class="hint"></div>
-            <div id="modelShortHazardBars" class="attribution-list"></div>
-          </div>
         </div>
 
-        <div class="split-table">
-          <div>
-            <div class="section-title">Long-Term Value Attribution</div>
-            <table id="modelAttributionTable"></table>
-          </div>
-          <div>
-            <div class="section-title">Short-Term Hazard Transmission</div>
-            <table id="modelHazardTable"></table>
-          </div>
+        <div id="modelLegacyAttribution">
+          <div class="section-title">Long-Term Value Attribution</div>
+          <table id="modelAttributionTable"></table>
         </div>
-        <div class="split-table" style="margin-top:12px">
+        <div class="split-table" id="modelLegacyTables" style="margin-top:12px">
           <div>
             <div class="section-title">Largest Security / Sector Impacts</div>
             <table id="modelInstrumentTable"></table>
@@ -5068,13 +6912,15 @@ HTML = r"""<!doctype html>
             <table id="modelResolutionTable"></table>
           </div>
         </div>
-        <div class="section-title" style="margin-top:14px">Calculation Ledger &amp; Reconciliation</div>
-        <table id="modelCalculationTable"></table>
-        <div id="modelCalibrationNotice" class="hint" style="margin-top:10px"></div>
+        <div id="modelLegacyLedger">
+          <div class="section-title" style="margin-top:14px">Calculation Ledger &amp; Reconciliation</div>
+          <table id="modelCalculationTable"></table>
+          <div id="modelCalibrationNotice" class="hint" style="margin-top:10px"></div>
+        </div>
       </div>
     </section>
 
-    <section class="panel accent-acid" id="daily-reco-backtest-section">
+    <section class="panel accent-acid research-sandbox" id="daily-reco-backtest-section" aria-hidden="true">
       <div class="panel-head"><span>Portfolio Validation</span><span id="dailyRecoBacktestTag">Point-in-time signal -> next trading day | net returns</span></div>
       <div class="panel-body">
         <div class="validation-controls">
@@ -5129,8 +6975,8 @@ HTML = r"""<!doctype html>
             <div class="section-title">Live hazard tape</div>
             <table id="dailyAlertTable"></table>
           </div>
-          <div>
-            <div class="section-title">Allocation transmission</div>
+          <div class="research-sandbox" aria-hidden="true">
+            <div class="section-title">Engineering overlay (not client-authorized)</div>
             <table id="dailyImpactTable"></table>
           </div>
         </div>
@@ -5150,7 +6996,7 @@ HTML = r"""<!doctype html>
       </div>
     </section>
 
-    <section class="panel accent-cyan" id="optimizer-section">
+    <section class="panel accent-cyan research-sandbox" id="optimizer-section" aria-hidden="true">
       <div class="panel-head"><span>Portfolio Construction &amp; Risk Budget</span><span id="optimizerTag">Automatic climate universe</span></div>
       <div class="panel-body">
         <div class="institution-controls">
@@ -5202,7 +7048,7 @@ HTML = r"""<!doctype html>
     </section>
 
     <section class="panel accent-pink" id="cvor-section">
-      <div class="panel-head"><span>Conditional Climate VaR &amp; Scenario Range</span><span>Physical + macro + transition FCFF | no assigned probability</span></div>
+      <div class="panel-head"><span>Conditional Climate Value Impact &amp; Scenario Range</span><span>Project-calibrated stress | no assigned probability</span></div>
       <div class="panel-body">
         <div id="scenarioSummary" class="risk-budget-grid"></div>
         <table id="scenarioTable"></table>
@@ -5220,11 +7066,20 @@ let CLIMATE_MODEL_LAB = null;
 let RECO_BACKTEST_WINDOW = "3m";
 
 function fmtPct(x){ return ((Number(x)||0)*100).toFixed(2)+"%"; }
+function fmtOptionalPct(x){ return x===null || x===undefined || !Number.isFinite(Number(x)) ? "Not calculable" : fmtPct(x); }
+function fmtIndex100(x){ return x===null || x===undefined || !Number.isFinite(Number(x)) ? "Not calculable" : (Number(x)*100).toFixed(2)+" / 100"; }
 function fmtMoney(x){ return "$"+Number(x||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
 function fmtPrice(x){ const n=Number(x); if(!Number.isFinite(n) || n<=0)return "-"; return "$"+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtVolume(x){ const n=Number(x); if(!Number.isFinite(n) || n<=0)return "-"; if(n>=1e9)return (n/1e9).toFixed(2)+"B"; if(n>=1e6)return (n/1e6).toFixed(2)+"M"; if(n>=1e3)return (n/1e3).toFixed(1)+"K"; return String(Math.round(n)); }
 function fmtBps(x){ const n=Number(x)||0; return (n>0?"+":"") + n.toFixed(0) + " bps"; }
+function fmtOptionalCount(x){ return x===null || x===undefined || !Number.isFinite(Number(x)) ? "Not calculable" : Number(x).toLocaleString(); }
 function fmtSignedPct(x){ const n=Number(x)||0; return (n>0?"+":"") + (n*100).toFixed(2)+"%"; }
+function fmtRiskSignedPct(x){
+  const n=Number(x)||0;
+  if(n!==0 && Math.abs(n)<0.0001) return n>0?"<0.01%":"-<0.01%";
+  return fmtSignedPct(n);
+}
+function fmtOptionalSignedPct(x){ return x===null || x===undefined || !Number.isFinite(Number(x)) ? "Not calculable" : fmtSignedPct(x); }
 function clsFor(v){ return Number(v)>=0 ? "green" : "red"; }
 function clamp(x, lo, hi){ return Math.max(lo, Math.min(hi, Number(x))); }
 
@@ -5232,11 +7087,7 @@ async function loadDashboard(){
   const res = await fetch("/api/dashboard");
   DASH = await res.json();
   renderDashboard(DASH);
-  await Promise.allSettled([
-    runOptimizer(),
-    loadClimateModelLab(),
-    loadDailyClimateBoard()
-  ]);
+  await loadClimateModelLab();
   renderInvestmentCommittee();
 }
 
@@ -5256,7 +7107,8 @@ async function loadClimateModelLab(){
     reference: document.getElementById("modelReference").value,
     horizon: document.getElementById("modelHorizon").value,
     sector: document.getElementById("modelSector").value,
-    ticker: document.getElementById("modelTicker").value
+    ticker: document.getElementById("modelTicker").value,
+    assumption_case: document.getElementById("modelAssumptionCase").value
   });
   const res = await fetch("/api/climate_model_lab?" + params.toString());
   CLIMATE_MODEL_LAB = await res.json();
@@ -5272,7 +7124,7 @@ function renderAttributionBars(targetId, rows, valueKey, labelKey, positiveMeans
     const value = Number(r[valueKey] || 0);
     const good = positiveMeansGood ? value >= 0 : value <= 0;
     const width = Math.max(3, Math.min(100, Math.abs(value)/maxAbs*100));
-    const display = valueKey.includes("bps") ? fmtBps(value) : fmtSignedPct(value);
+    const display = valueKey.includes("bps") ? fmtBps(value) : (valueKey === "risk_contribution" ? fmtIndex100(value) : fmtSignedPct(value));
     return `<div class="attribution-row">
       <span>${r[labelKey] || "-"}</span>
       <div class="attribution-track"><span class="${good?"positive":""}" style="width:${width}%"></span></div>
@@ -5281,29 +7133,377 @@ function renderAttributionBars(targetId, rows, valueKey, labelKey, positiveMeans
   }).join("");
 }
 
+function fmtMoneyCompact(value){
+  const n = Number(value);
+  if(!Number.isFinite(n)) return "-";
+  const a = Math.abs(n);
+  if(a>=1e9) return `${n<0?"-":""}$${(a/1e9).toFixed(1)}bn`;
+  if(a>=1e6) return `${n<0?"-":""}$${(a/1e6).toFixed(1)}m`;
+  if(a>=1e3) return `${n<0?"-":""}$${(a/1e3).toFixed(1)}k`;
+  return `${n<0?"-":""}$${a.toFixed(0)}`;
+}
+
+function selectDemoIssuer(ticker, sector){
+  document.getElementById("modelScope").value = "issuer";
+  document.getElementById("modelSector").value = sector;
+  document.getElementById("modelTicker").value = ticker;
+  updateModelControlState();
+  loadClimateModelLab();
+}
+
+function renderIssuerDemo(d){
+  const strip = document.getElementById("issuerDemoStrip");
+  if(!strip) return;
+  const demo = d.demo_issuers || {};
+  const rows = demo.rows || [];
+  const publicRows = ((d.public_evidence_universe||{}).rows)||[];
+  const publicByTicker = Object.fromEntries(publicRows.map(row=>[row.ticker,row]));
+  strip.innerHTML = rows.map(row=>{
+    const active = d.scope === "issuer" && d.ticker === row.ticker;
+    return `<button class="issuer-demo-card ${active?"active":""}" onclick="selectDemoIssuer('${row.ticker}','${row.sector}')">
+      <b>${row.ticker}</b><span>${row.sector}</span>
+    </button>`;
+  }).join("");
+}
+
 function renderClimateModelLab(d){
-  if(!d || !d.long_term || !d.short_term) return;
+  if(!d || !d.long_term) return;
   const lt = d.long_term;
-  const st = d.short_term;
+  const issuerPublicEvidence = d.issuer_public_evidence || {};
   const target = d.target || {};
   const reference = d.reference || {};
+  renderIssuerDemo(d);
+  const sectorResolution = d.sector_resolution || null;
+  if(d.scope === "issuer" && d.sector){
+    const sectorControl = document.getElementById("modelSector");
+    if(sectorControl) sectorControl.value = d.sector;
+  }
+  const sectorStatus = document.getElementById("modelSectorStatus");
+  if(sectorStatus){
+    const issuerDetails = sectorResolution
+      ? [
+          sectorResolution.issuer_name,
+          sectorResolution.exchange,
+          sectorResolution.country,
+          sectorResolution.industry,
+          sectorResolution.cik ? `CIK ${sectorResolution.cik}` : ""
+        ].filter(Boolean).join(" | ")
+      : "";
+    sectorStatus.innerHTML = sectorResolution
+      ? `<b>${d.ticker} · ${d.sector}</b>${issuerDetails ? ` · ${issuerDetails}` : ""} · mapping ${sectorResolution.as_of}`
+      : "Issuer mapping pending";
+  }
   document.getElementById("modelLabTag").textContent = `${d.scope_label} | ${target.label} vs ${reference.label} | ${d.horizon}`;
+  const pilot = d.issuer_pilot || {};
+  const hasIssuerPilot = d.scope === "issuer" && pilot.is_loaded;
+  const governanceBanner = document.getElementById("modelGovernanceBanner");
+  if(governanceBanner){
+    governanceBanner.textContent = `Eight issuers · observed inputs · visible Low/Base/High assumptions`;
+  }
+  const financialEvidence = document.getElementById("issuerFinancialEvidence");
+  const companyInfo = document.getElementById("issuerCompanyInfo");
+  const companyInfoTitle = document.getElementById("issuerCompanyInfoTitle");
+  const issuerDecisionView = document.getElementById("issuerDecisionView");
+  const issuerRiskCards = document.getElementById("issuerRiskCards");
+  const issuerCashFlowBridge = document.getElementById("issuerCashFlowBridge");
+  const issuerValuationCard = document.getElementById("issuerValuationCard");
+  const issuerInvestmentImpact = document.getElementById("issuerInvestmentImpact");
+  const issuerCalculationTable = document.getElementById("issuerCalculationTable");
+  const issuerCalculationTitle = document.getElementById("issuerCalculationTitle");
+  if(financialEvidence){
+    const demoRows = ((d.demo_issuers||{}).rows)||[];
+    const issuer = demoRows.find(row=>row.ticker===d.ticker);
+    if(d.scope === "issuer" && issuer){
+      const companyNames = {
+        AAPL:"Apple", CAT:"Caterpillar", CVX:"Chevron", DE:"Deere & Company",
+        DUK:"Duke Energy", MSFT:"Microsoft", NEE:"NextEra Energy", XOM:"Exxon Mobil"
+      };
+      const companyFcf = Number(issuer.free_cash_flow_usd);
+      const dukeFcff = Number(issuer.duke_fcff_usd);
+      const baseCashFlow = Number.isFinite(dukeFcff) && issuer.duke_fcff_usd!=="" ? dukeFcff : companyFcf;
+      const publicEvidence = d.issuer_public_evidence || {};
+      if(publicEvidence.is_loaded){
+        const transition = publicEvidence.transition || {};
+        const physical = publicEvidence.physical || {};
+        const valuation = d.prototype_valuation || {};
+        const observed = valuation.observed_inputs || {};
+        const assumptions = valuation.model_assumptions || {};
+        const channels = valuation.channels || [];
+        const channel = key => channels.find(row=>row.key===key) || {};
+        const range = d.valuation_range || {};
+        const selectedCase = String(valuation.assumption_case || "base");
+        const physicalCoverage = Number(physical.fema_county_matches||0)>0
+          ? `${physical.fema_county_matches}/${physical.epa_parent_facilities} facilities matched`
+          : `${Number(physical.disclosed_value||0).toFixed(0)}% disclosed exposure`;
+        financialEvidence.style.display = "block";
+        financialEvidence.innerHTML = `<b>${companyNames[issuer.ticker] || issuer.ticker}</b> · ${issuer.sector} · SEC FCFF/PP&amp;E · reported Scope 1/2/3 · FEMA EAL · NGFS/CIE · ${selectedCase.toUpperCase()} assumptions`;
+        if(companyInfo && companyInfoTitle){
+          companyInfoTitle.style.display = "flex";
+          companyInfoTitle.innerHTML = `<span>01</span>Valuation`;
+          companyInfo.innerHTML = [
+            ["Modeled value impact", valuation.is_calculable?fmtSignedPct(valuation.value_impact):"Not calculable", Number(valuation.value_impact)>=0?"green":"red"],
+            [`${d.horizon} FCFF change`, valuation.is_calculable?fmtMoneyCompact(valuation.terminal_fcff_delta_usd):"-", Number(valuation.terminal_fcff_delta_usd)>=0?"green":"red"],
+            ["Low / base / high", `${fmtSignedPct(range.low)} / ${fmtSignedPct(range.base)} / ${fmtSignedPct(range.high)}`, "blue"],
+            ["WACC / terminal g", `${fmtPct(valuation.wacc)} / ${fmtPct(valuation.terminal_growth)}`, "blue"]
+          ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
+        }
+        if(issuerDecisionView && issuerRiskCards && issuerCashFlowBridge && issuerValuationCard && issuerInvestmentImpact){
+          issuerDecisionView.style.display = "block";
+          issuerRiskCards.innerHTML = [
+            ["transition","Transition",channel("transition")],
+            ["physical","Physical",channel("physical")],
+            ["macro","Macro / supply",channel("macro_supply")]
+          ].map(c=>`<div class="risk-channel-card ${c[0]}">
+            <div class="risk-card-kicker">${c[1]} FCFF pressure at ${d.horizon}</div>
+            <div class="risk-card-rate ${Number(c[2].terminal_cash_flow_delta_rate)<0?"green":""}">${fmtRiskSignedPct(c[2].terminal_cash_flow_delta_rate)}</div>
+            <div class="risk-card-money">${fmtMoneyCompact(-Number(c[2].terminal_cash_flow_delta_usd||0))} annual FCFF effect</div>
+            <div class="risk-card-formula">DCF contribution ${fmtRiskSignedPct(c[2].value_contribution)}</div>
+          </div>`).join("");
+          issuerCashFlowBridge.innerHTML = [
+            ["2025 normalized FCFF",fmtMoneyCompact(observed.normalized_fcff_usd),"SEC financial baseline"],
+            ["Transition",fmtMoneyCompact(-Number(channel("transition").terminal_cash_flow_delta_usd||0)),"modeled annual delta"],
+            ["Physical",fmtMoneyCompact(-Number(channel("physical").terminal_cash_flow_delta_usd||0)),"modeled annual delta"],
+            ["Macro / supply",fmtMoneyCompact(-Number(channel("macro_supply").terminal_cash_flow_delta_usd||0)),"modeled annual delta"],
+            [`${d.horizon} scenario FCFF`,fmtMoneyCompact(valuation.target_terminal_fcff_usd),"after growth and climate channels"]
+          ].map(s=>`<div class="cashflow-stage"><div class="stage-label">${s[0]}</div><div class="stage-value">${s[1]}</div><div class="stage-note">${s[2]}</div></div>`).join("");
+          issuerValuationCard.innerHTML = `<div class="label">Discounted enterprise-value impact</div>`+
+            `<div class="value">${fmtSignedPct(valuation.value_impact)}</div>`+
+            `<div class="detail">${fmtMoneyCompact(valuation.reference_enterprise_value_usd)} → ${fmtMoneyCompact(valuation.target_enterprise_value_usd)}<br>`+
+            `Common WACC ${fmtPct(valuation.wacc)} · ${selectedCase} case<br>Modeled sensitivity, not a price target.</div>`;
+          const dominant = [...channels].sort((a,b)=>Math.abs(Number(b.value_contribution||0))-Math.abs(Number(a.value_contribution||0)))[0] || {};
+          issuerInvestmentImpact.innerHTML = [
+            ["Compare",`Main driver: ${dominant.label || "-"}`,"Rank peers on one scenario boundary."],
+            ["Review","Low / Base / High","Challenge exposure, resilience and pass-through."],
+            ["Use","Risk budget / engagement","Long-horizon review; no automatic trade."]
+          ].map(c=>`<div class="investment-impact-card"><div class="label">${c[0]}</div><div class="headline">${c[1]}</div><div class="copy">${c[2]}</div></div>`).join("");
+        }
+        const disclosure = document.getElementById("issuerCalculationDisclosure");
+        if(issuerCalculationTable && disclosure){
+          disclosure.style.display = "block";
+          if(issuerCalculationTitle) issuerCalculationTitle.style.display = "flex";
+          issuerCalculationTable.style.display = "table";
+          const detail = valuation.terminal_component_detail || {};
+          const rows = [
+            ["Observed", "Normalized FCFF", observed.fcff_status, fmtMoneyCompact(observed.normalized_fcff_usd)],
+            ["Observed", "Reported Scope 1 / 2 / 3", transition.source_title || "Issuer report", `${Number(observed.scope1_tco2e||0).toLocaleString()} / ${Number(observed.scope2_tco2e||0).toLocaleString()} / ${Number(observed.scope3_tco2e||0).toLocaleString()} tCO2e`],
+            ["Observed", "SEC net PP&E", `Period end ${observed.ppe_period_end||"-"}`, fmtMoneyCompact(observed.net_ppe_usd)],
+            ["Observed", "FEMA building EAL rate", `${observed.fema_eal_source}; ${observed.fema_matches||0} matches`, fmtPct(observed.fema_building_eal_rate)],
+            ["Observed", "CIE heat-productivity loss", `Target / reference at ${d.horizon}`, `${fmtPct(observed.cie_terminal_labour_loss_target)} / ${fmtPct(observed.cie_terminal_labour_loss_reference)}`],
+            ["Observed", "SEC CapEx / CFO", "Company macro/supply dependency input", fmtPct(observed.capex_to_operating_cash_flow)],
+            ["Observed", "Beta / Treasury", `${observed.beta_observations} monthly returns; Treasury ${observed.risk_free_as_of}`, `${Number(observed.beta||0).toFixed(2)} / ${fmtPct(observed.risk_free_rate)}`],
+            ["Assumption", "Policy coverage / pass-through", selectedCase, `${fmtPct(assumptions.policy_coverage)} / ${fmtPct(assumptions.pass_through)}`],
+            ["Assumption", "Scope 2 / Scope 3 incidence", "Purchased energy / value chain", `${fmtPct(assumptions.scope2_cost_incidence)} / ${fmtPct(assumptions.scope3_value_chain_incidence)}`],
+            ["Assumption", "Emissions decline", "Annual", fmtPct(assumptions.annual_emissions_decline)],
+            ["Assumption", "Covered PP&E / recovery", "Facility allocation / insurance + adaptation", `${fmtPct(assumptions.covered_ppe_share)} / ${fmtPct(assumptions.insurance_adaptation_recovery)}`],
+            ["Calculation", "Transition components", "Scope 1 + Scope 2 + Scope 3", `${fmtMoneyCompact(-Number(detail.scope1||0))} / ${fmtMoneyCompact(-Number(detail.scope2||0))} / ${fmtMoneyCompact(-Number(detail.scope3||0))}`],
+            ["Calculation", "Physical components", "Acute FEMA EAL + chronic CIE heat", `${fmtMoneyCompact(-Number(detail.acute||0))} / ${fmtMoneyCompact(-Number(detail.chronic||0))}`],
+            ["Assumption", "Macro transmission", assumptions.macro_dependency_rule, `${fmtPct(assumptions.macro_cashflow_elasticity)} × ${Number(assumptions.macro_dependency_scale||0).toFixed(2)}`],
+            ["Valuation", "Target vs reference", "Annual FCFF + terminal value; common WACC", fmtSignedPct(valuation.value_impact)]
+          ];
+          issuerCalculationTable.innerHTML = `<tr><th>Class</th><th>Input</th><th>Source / rule</th><th>Value</th></tr>`+
+            rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
+        }
+      } else {
+      const physicalRate = Number(lt.physical_loss_delta||0);
+      const transitionRate = Number(lt.transition_loss_delta||0);
+      const macroRate = Number(lt.macro_loss_delta||0);
+      const physicalAmount = baseCashFlow*physicalRate;
+      const transitionAmount = baseCashFlow*transitionRate;
+      const macroAmount = baseCashFlow*macroRate;
+      const scenarioCashFlow = Number.isFinite(baseCashFlow) ? baseCashFlow-physicalAmount-transitionAmount-macroAmount : null;
+      const wacc = Number(lt.weighted_wacc);
+      const growth = Number(lt.weighted_terminal_growth);
+      const canValue = baseCashFlow>0 && scenarioCashFlow!==null && scenarioCashFlow>0 && wacc>growth;
+      const referenceValue = canValue ? baseCashFlow*(1+growth)/(wacc-growth) : null;
+      const scenarioValue = canValue ? scenarioCashFlow*(1+growth)/(wacc-growth) : null;
+      const valueChange = referenceValue!==null ? scenarioValue/referenceValue-1 : null;
+      const evidenceLabel = Number(issuer.direct_emitter_matches||0)>0
+        ? `${issuer.direct_emitter_matches} EPA emitter matches / ${issuer.parent_facility_records} facilities`
+        : "Industry inputs used where company data are unavailable";
+      financialEvidence.style.display = "block";
+      financialEvidence.innerHTML = `<strong>${companyNames[issuer.ticker] || issuer.ticker}: calculation summary</strong>`+
+        `Operating cash flow ${fmtMoneyCompact(issuer.operating_cash_flow_usd)} − CapEx ${fmtMoneyCompact(issuer.capital_expenditure_usd)} = FCF ${fmtMoneyCompact(companyFcf)}. `+
+        `${issuer.ticker==="DUK" ? `After adding after-tax interest, FCFF is ${fmtMoneyCompact(baseCashFlow)}. ` : ""}`+
+        `The table below shows every substitution used in the climate-impact and continuing-value example.`;
+      if(companyInfo && companyInfoTitle){
+        companyInfoTitle.style.display = "flex";
+        companyInfo.innerHTML = [
+          ["Company", companyNames[issuer.ticker] || issuer.ticker],
+          ["Ticker", issuer.ticker],
+          ["Sector", issuer.sector],
+          ["Financial year", String(issuer.fiscal_year || 2025)],
+          ["Base cash flow", fmtMoneyCompact(baseCashFlow)],
+          ["Input coverage", evidenceLabel]
+        ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value blue">${c[1]}</div></div>`).join("");
+      }
+      if(issuerDecisionView && issuerRiskCards && issuerCashFlowBridge && issuerValuationCard && issuerInvestmentImpact){
+        const attribution = lt.attribution || [];
+        const lossFor = label => Number((attribution.find(r=>r.label===label)||{}).loss_delta||0);
+        const componentText = rows => rows.map(([label,key])=>`${label} ${fmtSignedPct(lossFor(key))}`).join(" · ");
+        const inputSource = Number(issuer.direct_emitter_matches||0)>0 ? "Company + industry inputs" : "Industry estimate";
+        const channels = [
+          {
+            key:"physical", label:"Physical risk", rate:physicalRate, amount:physicalAmount,
+            formula:"Acute + chronic physical loss",
+            components:componentText([["Acute","Acute physical"],["Chronic","Chronic physical"]]),
+            source:inputSource
+          },
+          {
+            key:"transition", label:"Direct transition risk", rate:transitionRate, amount:transitionAmount,
+            formula:"Demand + carbon + energy + transition CapEx − pass-through",
+            components:componentText([["Demand","Sector demand"],["Carbon","Carbon cost"],["Energy","Energy cost"],["CapEx","Transition CapEx"],["Pass-through","Cost pass-through"]]),
+            source:inputSource
+          },
+          {
+            key:"macro", label:"Macro / supply chain", rate:macroRate, amount:macroAmount,
+            formula:"Country GDP + supply-chain transmission",
+            components:componentText([["GDP","Country GDP"],["Supply chain","Supply chain"]]),
+            source:"Industry estimate"
+          }
+        ];
+        const totalPressure = channels.reduce((sum,c)=>sum+Math.abs(c.amount),0);
+        const dominant = [...channels].sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount))[0];
+        const dominantShare = totalPressure>0 ? Math.abs(dominant.amount)/totalPressure : 0;
+        const managementQuestion = dominant.key==="physical"
+          ? "Check facility locations, insurance, resilience and recovery plans."
+          : dominant.key==="transition"
+            ? "Check emissions, energy mix, transition CapEx and pricing power."
+            : "Check supplier concentration, customer demand and regional exposure.";
+        issuerDecisionView.style.display = "block";
+        issuerRiskCards.innerHTML = channels.map(c=>`<div class="risk-channel-card ${c.key}">
+          <div class="risk-card-kicker">${c.label}</div>
+          <div class="risk-card-rate">${fmtSignedPct(c.rate)}</div>
+          <div class="risk-card-money">Cash-flow effect ${fmtMoneyCompact(-c.amount)}</div>
+          <div class="risk-card-formula">${fmtMoneyCompact(baseCashFlow)} × ${fmtPct(c.rate)} = ${fmtMoneyCompact(c.amount)}</div>
+          <div class="risk-card-components">${c.formula}<br>${c.components}</div>
+          <span class="risk-card-source">${c.source}</span>
+        </div>`).join("");
+        issuerCashFlowBridge.innerHTML = [
+          ["Base cash flow",fmtMoneyCompact(baseCashFlow),issuer.ticker==="DUK"?"Unlevered FCFF":"2025 FCF"],
+          ["Physical",fmtMoneyCompact(-physicalAmount),fmtPct(physicalRate)+" pressure"],
+          ["Transition",fmtMoneyCompact(-transitionAmount),fmtPct(transitionRate)+" pressure"],
+          ["Macro / supply",fmtMoneyCompact(-macroAmount),fmtPct(macroRate)+" pressure"],
+          ["Scenario cash flow",fmtMoneyCompact(scenarioCashFlow),`${target.label} vs ${reference.label}`]
+        ].map(s=>`<div class="cashflow-stage"><div class="stage-label">${s[0]}</div><div class="stage-value">${s[1]}</div><div class="stage-note">${s[2]}</div></div>`).join("");
+        issuerValuationCard.innerHTML = `<div class="label">Continuing-value sensitivity</div>`+
+          `<div class="value">${valueChange===null?"N/A":fmtSignedPct(valueChange)}</div>`+
+          `<div class="detail">${referenceValue===null?"Positive normalized cash flow is required before this illustration is meaningful.":`${fmtMoneyCompact(referenceValue)} → ${fmtMoneyCompact(scenarioValue)}`}<br>`+
+          `WACC ${(wacc*100).toFixed(2)}% · terminal growth ${(growth*100).toFixed(2)}%<br>Illustration, not a price target.</div>`;
+        issuerInvestmentImpact.innerHTML = [
+          ["Dominant modeled channel",dominant.label,`${(dominantShare*100).toFixed(1)}% of the absolute three-channel cash-flow pressure.`],
+          ["Security selection","Compare with sector peers","Rank issuers under the same scenario and inspect why their cash-flow sensitivity differs."],
+          ["Risk budget","Size the scenario exposure","Use the valuation sensitivity as one long-horizon risk-budget input alongside fundamentals and portfolio concentration."],
+          ["Issuer engagement","Question the main driver",managementQuestion+" No automatic trade is produced."]
+        ].map(c=>`<div class="investment-impact-card"><div class="label">${c[0]}</div><div class="headline">${c[1]}</div><div class="copy">${c[2]}</div></div>`).join("");
+      }
+      if(issuerCalculationTable && issuerCalculationTitle){
+        issuerCalculationTitle.style.display = "flex";
+        issuerCalculationTable.style.display = "table";
+        const rows = [
+          ["Operating cash flow", "SEC cash-flow statement", fmtMoneyCompact(issuer.operating_cash_flow_usd)],
+          ["Capital expenditure", "SEC cash-flow statement", `− ${fmtMoneyCompact(issuer.capital_expenditure_usd)}`],
+          ["Free cash flow", "Operating cash flow − capital expenditure", fmtMoneyCompact(companyFcf)]
+        ];
+        if(issuer.ticker==="DUK") rows.push(["Unlevered FCFF", `FCF + after-tax interest (${fmtMoneyCompact(baseCashFlow-companyFcf)})`, fmtMoneyCompact(baseCashFlow)]);
+        rows.push(
+          ["Physical-risk effect", `${fmtMoneyCompact(baseCashFlow)} × ${fmtPct(physicalRate)}`, fmtMoneyCompact(-physicalAmount)],
+          ["Transition-risk effect", `${fmtMoneyCompact(baseCashFlow)} × ${fmtPct(transitionRate)}`, fmtMoneyCompact(-transitionAmount)],
+          ["Macro / supply-chain effect", `${fmtMoneyCompact(baseCashFlow)} × ${fmtPct(macroRate)}`, fmtMoneyCompact(-macroAmount)],
+          ["Scenario cash flow", "Base cash flow − physical − transition − macro/supply", fmtMoneyCompact(scenarioCashFlow)],
+          ["Discount assumptions", `WACC ${(wacc*100).toFixed(2)}%; terminal growth ${(growth*100).toFixed(2)}%`, "Applied below"],
+          ["Reference continuing value", "Base cash flow × (1 + g) ÷ (WACC − g)", referenceValue===null?"Not meaningful with non-positive cash flow":fmtMoneyCompact(referenceValue)],
+          ["Scenario continuing value", "Scenario cash flow × (1 + g) ÷ (WACC − g)", scenarioValue===null?"Not meaningful with non-positive cash flow":fmtMoneyCompact(scenarioValue)],
+          ["Continuing-value change", "Scenario value ÷ reference value − 1", valueChange===null?"Not calculated":fmtSignedPct(valueChange)]
+        );
+        issuerCalculationTable.innerHTML = `<tr><th>Calculation</th><th>Formula / input</th><th>Result</th></tr>`+
+          rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("");
+      }
+      }
+    } else {
+      financialEvidence.style.display = "none";
+      financialEvidence.innerHTML = "";
+      if(companyInfo) companyInfo.innerHTML = "";
+      if(companyInfoTitle) companyInfoTitle.style.display = "none";
+      if(issuerDecisionView) issuerDecisionView.style.display = "none";
+      if(issuerRiskCards) issuerRiskCards.innerHTML = "";
+      if(issuerCashFlowBridge) issuerCashFlowBridge.innerHTML = "";
+      if(issuerValuationCard) issuerValuationCard.innerHTML = "";
+      if(issuerInvestmentImpact) issuerInvestmentImpact.innerHTML = "";
+      if(issuerCalculationTable){ issuerCalculationTable.innerHTML = ""; issuerCalculationTable.style.display = "none"; }
+      if(issuerCalculationTitle) issuerCalculationTitle.style.display = "none";
+      const calculationDisclosure = document.getElementById("issuerCalculationDisclosure");
+      if(calculationDisclosure) calculationDisclosure.style.display = "none";
+    }
+  }
+  const ngfsEvidence = document.getElementById("ngfsTransitionEvidence");
+  if(ngfsEvidence){
+    const official = d.official_transition || {};
+    const release = official.release || {};
+    const targetPath = official.target || {};
+    const referencePath = official.reference || {};
+    const priceText = value => value===null || value===undefined ? "Not available" : `US$2010 ${Number(value).toFixed(2)}/tCO2`;
+    ngfsEvidence.innerHTML = release.is_loaded && issuerPublicEvidence.is_loaded
+      ? `<b>NGFS ${release.source_release}:</b> ${targetPath.scenario || target.label} ${priceText(targetPath.carbon_price_median)} vs ${referencePath.scenario || reference.label} ${priceText(referencePath.carbon_price_median)} at ${d.horizon}.`
+      : release.is_loaded
+      ? `<strong>Official NGFS ${release.source_release} USA transition evidence | ${release.release_id}</strong>` +
+        `${targetPath.scenario || target.label}: median ${priceText(targetPath.carbon_price_median)}` +
+        `${targetPath.carbon_price_min!==null && targetPath.carbon_price_min!==undefined ? `; model range ${priceText(targetPath.carbon_price_min)}–${priceText(targetPath.carbon_price_max)}` : ""}. ` +
+        `${referencePath.scenario || reference.label}: ${priceText(referencePath.carbon_price_median)}. ` +
+        `The model range is not a probability interval. ${hasIssuerPilot ? "A gross static emissions sensitivity is loaded below; net issuer carbon cost remains Not calculable because jurisdiction, free allocation, pass-through and the future emissions path are missing." : "Issuer carbon cost remains Not calculable until covered emissions, jurisdiction, free allocation, and pass-through evidence are loaded."} Affected Phase 5 physical-damage variables are excluded.`
+      : `<strong>Official NGFS transition evidence not loaded</strong>Project pathway calibrations remain isolated and cannot be represented as official scenario data.`;
+  }
+  const pilotEvidence = document.getElementById("issuerPilotEvidence");
+  if(pilotEvidence){
+    if(d.scope === "issuer" && pilot.is_loaded && !issuerPublicEvidence.is_loaded){
+      const carbon = pilot.carbon_sensitivity || {};
+      const fcff = pilot.fcff_bridge || {};
+      const tonnes = Number(pilot.ownership_adjusted_nonbiogenic_co2_tonnes || 0);
+      const gross = Number(carbon.gross_static_exposure_usd || 0);
+      const fcffValue = Number(fcff.fcff || 0);
+      pilotEvidence.style.display = "block";
+      pilotEvidence.innerHTML = `<strong>DUK governed issuer evidence | ${pilot.release_id}</strong>` +
+        `EPA ${pilot.epa_year}: ${pilot.direct_emitter_matches}/${pilot.parent_records} parent records match direct emitters; ${pilot.coordinate_matches} have coordinates; ownership-adjusted non-biogenic CO2 is ${(tonnes/1e6).toFixed(2)} Mt. ` +
+        `At the NGFS Current Policies 2050 median, the static gross price exposure is $${(gross/1e6).toFixed(1)}m. This is not net cost: free allocation, pass-through, jurisdiction and the future emissions path are missing. ` +
+        `SEC 2025 FCFF bridge is $${(fcffValue/1e9).toFixed(2)}bn using CFO − CapEx + after-tax interest; source line items tie to the filed 10-K, while the FCFF method and valuation remain research-only. ` +
+        `${pilot.fema_county_matches} facility records match FEMA county context, but issuer physical loss remains Not calculable because asset values, damage functions, interruption and recovery evidence are missing.`;
+    } else {
+      pilotEvidence.style.display = "none";
+      pilotEvidence.innerHTML = "";
+    }
+  }
   const summary = document.getElementById("modelLabSummary");
-  summary.innerHTML = [
+  const isLongCalculable = lt.value_impact !== null && lt.value_impact !== undefined;
+  const publicEvidence = issuerPublicEvidence;
+  summary.innerHTML = publicEvidence.is_loaded ? [
     ["Scope", d.scope_label, ""],
-    ["Value impact vs reference", fmtSignedPct(lt.value_impact), clsFor(lt.value_impact)],
-    ["Physical loss delta", fmtSignedPct(lt.physical_loss_delta), clsFor(-lt.physical_loss_delta)],
-    ["Transition loss delta", fmtSignedPct(lt.transition_loss_delta), clsFor(-lt.transition_loss_delta)],
-    ["NWS event risk", fmtPct(st.event_risk), st.event_risk>=.55?"red":(st.event_risk>=.30?"amber":"green")],
-    ["Tactical overlay", fmtBps(st.tactical_overlay_bps), clsFor(st.tactical_overlay_bps)]
+    ["Gross transition sensitivity", fmtMoneyCompact((publicEvidence.transition||{}).gross_sensitivity_usd), "blue"],
+    ["Physical financial loss", "Not calculable", "amber"],
+    ["Macro / supply loss", "Not calculable", "amber"],
+    ["Issuer value impact", "Not calculable", "amber"]
+  ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("") : [
+    ["Scope", d.scope_label, ""],
+    [hasIssuerPilot ? `${d.sector} stress (not issuer value)` : (d.scope === "issuer" ? "Research value proxy" : "Value impact vs reference"), fmtOptionalSignedPct(lt.value_impact), isLongCalculable?clsFor(lt.value_impact):"amber"],
+    [hasIssuerPilot ? `${d.sector} physical stress` : "Physical scenario proxy", fmtOptionalSignedPct(lt.physical_loss_delta), isLongCalculable?clsFor(-lt.physical_loss_delta):"amber"],
+    [hasIssuerPilot ? `${d.sector} macro/supply stress` : "Macro / supply-chain proxy", fmtOptionalSignedPct(lt.macro_loss_delta), isLongCalculable?clsFor(-lt.macro_loss_delta):"amber"],
+    [hasIssuerPilot ? `${d.sector} transition stress` : "Direct transition proxy", fmtOptionalSignedPct(lt.transition_loss_delta), isLongCalculable?clsFor(-lt.transition_loss_delta):"amber"],
+    ["Financial baseline", d.scope === "issuer" ? "2025 company FCF" : "Scenario aggregate", "blue"]
   ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
+  ["modelLabSummary","modelLegacyLong","modelLegacyAttribution","modelLegacyTables","modelLegacyLedger"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display=publicEvidence.is_loaded?"none":"";
+  });
 
-  const valueDirection = lt.value_impact < 0 ? "lower" : (lt.value_impact > 0 ? "higher" : "unchanged");
-  document.getElementById("modelLongHeadline").innerHTML = `If markets reprice from <b>${reference.label}</b> to <b>${target.label}</b>, the model values this ${d.scope} <b>${Math.abs(lt.value_impact*100).toFixed(2)}%</b> ${valueDirection}. This is a conditional valuation delta, not a forecast probability.`;
-  document.getElementById("modelShortHeadline").innerHTML = `<b>${String(st.top_driver || "climate").replace("_"," ")}</b> is the dominant live driver. Event risk is ${fmtPct(st.event_risk)}, producing <b>${st.action}</b> at ${fmtBps(st.tactical_overlay_bps)} with ${fmtPct(st.data_confidence)} data confidence.`;
-
+  if(publicEvidence.is_loaded){
+    document.getElementById("modelLongHeadline").innerHTML = `<b>Calculated public-data comparison:</b> reported Scope 1 × the selected NGFS carbon-price delta. Physical information is an exposure screen. Net transition cost, physical loss, macro/supply loss, scenario FCFF and valuation are not calculated from incomplete evidence.`;
+  } else if(isLongCalculable){
+    const valueDirection = lt.value_impact < 0 ? "lower" : (lt.value_impact > 0 ? "higher" : "unchanged");
+    document.getElementById("modelLongHeadline").innerHTML = hasIssuerPilot
+      ? `The displayed <b>${fmtSignedPct(lt.value_impact)}</b> is the ${d.sector} project stress for ${target.label} versus ${reference.label}; it is <b>not a ${d.ticker} valuation</b>. DUK net transition cost, physical financial loss and issuer valuation remain Not calculable. <b>${d.decision_status || ""}</b>`
+      : `If markets reprice from <b>${reference.label}</b> to <b>${target.label}</b>, the conditional research proxy values this ${d.scope} <b>${Math.abs(lt.value_impact*100).toFixed(2)}%</b> ${valueDirection}. This is neither a forecast probability nor an audited issuer valuation. <b>${d.decision_status || ""}</b>`;
+  } else {
+    document.getElementById("modelLongHeadline").innerHTML = `<b>Not calculable.</b> ${d.decision_status || "Required issuer inputs are not verified."}`;
+  }
   renderAttributionBars("modelLongAttributionBars", lt.attribution || [], "value_contribution", "label", true);
-  renderAttributionBars("modelShortHazardBars", (st.hazards || []).slice(0,5), "risk_contribution", "label", false);
 
   const attrTable = document.getElementById("modelAttributionTable");
   attrTable.innerHTML = `<tr><th>Component</th><th>Target loss</th><th>Reference loss</th><th>Loss delta</th><th>Value contribution</th></tr>` +
@@ -5313,22 +7513,15 @@ function renderClimateModelLab(d){
       <td class="${clsFor(r.value_contribution)}"><b>${fmtSignedPct(r.value_contribution)}</b></td>
     </tr>`).join("");
 
-  const hazardTable = document.getElementById("modelHazardTable");
-  hazardTable.innerHTML = `<tr><th>Hazard</th><th>Severity</th><th>Exposure</th><th>Vulnerability</th><th>Resilience</th><th>Loss contribution</th><th>Data</th></tr>` +
-    (st.hazards || []).map(r=>`<tr>
-      <td><b>${r.label}</b><br><span class="hint">${r.dominant_exposure}</span></td><td>${fmtPct(r.hazard_intensity || r.intensity)}</td><td>${Number(r.exposure||0).toFixed(2)}</td>
-      <td>${Number(r.vulnerability||0).toFixed(2)}</td><td>${fmtPct(r.resilience||0)}</td><td class="amber">${fmtPct(r.risk_contribution)}</td><td><span class="hint">${r.data_quality || "Fallback"}</span></td>
-    </tr>`).join("");
-
   const instrumentTable = document.getElementById("modelInstrumentTable");
-  instrumentTable.innerHTML = `<tr><th>Name</th><th>Sector</th><th>Weight</th><th>Value impact</th><th>Transition driver</th><th>WACC / g</th><th>Sector A / C</th><th>Issuer A / C</th><th>Data</th></tr>` +
+  instrumentTable.innerHTML = `<tr><th>Name</th><th>Sector</th><th>Weight</th><th>Value impact</th><th>Largest direct transition channel</th><th>Valuation input</th><th>Sector A / C</th><th>Issuer evidence</th><th>Data</th></tr>` +
     (lt.instruments || []).slice(0,8).map(r=>`<tr>
       <td><b>${r.name}</b></td><td>${r.sector}</td><td>${fmtPct(r.weight)}</td>
       <td class="${clsFor(r.value_impact)}"><b>${fmtSignedPct(r.value_impact)}</b></td>
       <td>${String(r.transition_driver || "-").replaceAll("_", " ")}</td>
-      <td>${fmtPct((r.valuation || {}).wacc || 0)} / ${fmtPct((r.valuation || {}).terminal_growth || 0)}<br><span class="hint">beta ${Number((r.valuation || {}).equity_beta || 0).toFixed(2)}</span></td>
+      <td>${d.scope === "issuer" ? "Assumption grid pending" : "Sector research calibration"}<br><span class="hint">Single-point issuer WACC/g is not decision-authorized</span></td>
       <td>${Number(r.acute_sector_multiplier||0).toFixed(2)}x / ${Number(r.chronic_sector_multiplier||0).toFixed(2)}x</td>
-      <td>${Number(r.acute_ratio||0).toFixed(2)}x / ${Number(r.chronic_ratio||0).toFixed(2)}x</td>
+      <td>${d.scope === "issuer" ? "Not verified" : "Not applicable"}</td>
       <td><span class="lab-status">${r.data_quality || "Proxy"}</span></td>
     </tr>`).join("");
 
@@ -5338,12 +7531,16 @@ function renderClimateModelLab(d){
       <td><b>${r.level}</b></td><td>${r.input}</td><td><span class="lab-status">${r.status}</span></td><td>${r.output}</td>
     </tr>`).join("");
   const calculationTable = document.getElementById("modelCalculationTable");
+  const longTermLedger = (d.calculation_ledger || []).filter(r=>
+    !/nws|nowcast|short.?term|hazard transmission/i.test(`${r.step||""} ${r.formula||""} ${r.input||""}`)
+  );
   calculationTable.innerHTML = `<tr><th>Step</th><th>Equation / rule</th><th>Input</th><th>Reconciled output</th><th>Check</th></tr>` +
-    (d.calculation_ledger || []).map(r=>`<tr>
+    longTermLedger.map(r=>`<tr>
       <td><b>${r.step}</b></td><td>${r.formula}</td><td>${r.input}</td><td>${r.output}</td>
       <td class="${r.check === "Pass" ? "status-pass" : "status-watch"}">${r.check}</td>
     </tr>`).join("");
-  document.getElementById("modelCalibrationNotice").textContent = `${d.calibration_notice} ${d.methodology.probability_rule} ${d.methodology.tail_rule}`;
+  const methodology = d.methodology || {};
+  document.getElementById("modelCalibrationNotice").textContent = `${d.calibration_notice || ""} ${methodology.probability_rule || ""} ${methodology.tail_rule || ""}`;
   renderInvestmentCommittee();
 }
 
@@ -5393,12 +7590,12 @@ function renderDailyClimateBoard(d){
   if(!d) return;
   const driver = String(d.top_driver || "none").replace("_"," ");
   const ci = (DASH && DASH.climate_intelligence) || {};
-  document.getElementById("dailyClimateTag").textContent = `${d.source_mode} | observed hazard mix`;
+  document.getElementById("dailyClimateTag").textContent = `${d.source_mode} | ${d.decision_status || (d.is_calculable ? "observed hazard mix" : "not calculable")}`;
   document.getElementById("dailyClimateSummary").innerHTML = [
     ["Top driver", driver],
-    ["Climate alerts", Number(d.climate_alerts || 0).toLocaleString()],
-    ["Event pressure", fmtPct(d.daily_pressure || 0)],
-    ["Data confidence", fmtPct(ci.confidence || 0)],
+    ["Climate alerts", fmtOptionalCount(d.climate_alerts)],
+    ["NWS pressure index", fmtIndex100(d.daily_pressure)],
+    ["Evidence grade", "Proxy-dominant"],
     ["Physical pressure", fmtPct(ci.physical_score || 0)],
     ["Transition pressure", fmtPct(ci.transition_score || 0)]
   ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div></div>`).join("");
@@ -5408,8 +7605,8 @@ function renderDailyClimateBoard(d){
     alertTable.innerHTML = `<tr><th>Driver</th><th>Alerts</th><th>Intensity</th><th>Portfolio implication</th><th>Observed area</th></tr>` +
       (d.daily_alerts || []).map(r=>`<tr>
         <td><b>${r.driver_label}</b></td>
-        <td>${Number(r.count || 0).toLocaleString()}</td>
-        <td>${fmtPct(r.intensity)}</td>
+        <td>${fmtOptionalCount(r.count)}</td>
+        <td>${fmtOptionalPct(r.intensity)}</td>
         <td>${r.reminder}</td>
         <td>${r.sample_area || "-"}</td>
       </tr>`).join("");
@@ -5590,39 +7787,28 @@ function renderScoreBar(score){
 function renderClientClimateIntelligence(ci){
   const summary = document.getElementById("clientSummary");
   if(!summary) return;
-  const riskClass = ci.risk_level === "High" ? "red" : (ci.risk_level === "Elevated" ? "amber" : "green");
-  document.getElementById("clientSummaryTag").textContent = `${ci.risk_level || "Watch"} | independent pressure and tail controls | ${fmtPct(ci.confidence || 0)} confidence`;
+  document.getElementById("clientSummaryTag").textContent = "Proxy-dominant evidence | research use only";
   summary.innerHTML = `
     <div class="client-callout">
-      <div class="title">Current portfolio risk posture</div>
-      <div class="headline ${riskClass}">${ci.risk_level || "Watch"}</div>
-      <div>${ci.client_action || "-"}</div>
-      ${renderScoreBar(ci.decision_score || ci.total_score || 0)}
-      <div class="hint" style="margin-top:8px">${ci.headline || ""}</div>
+      <div class="title">Model stage</div>
+      <div class="headline amber">Research only</div>
+      <div>Conditional scenario and sector-stress review. No portfolio tilt, tactical overlay, or security recommendation is authorized.</div>
+      <div class="hint" style="margin-top:8px">Issuer outputs require verified facilities, financials, emissions, revenue geography, and value-chain exposure.</div>
     </div>
     <div class="grid two">
-      <div class="signal-card"><div class="label">Physical pressure</div><div class="value ${clsFor(.44-(ci.physical_score || 0))}">${fmtPct(ci.physical_score || 0)}</div>${renderScoreBar(ci.physical_score || 0)}<div class="hint">Severity index, not event probability</div></div>
-      <div class="signal-card"><div class="label">Transition pressure</div><div class="value ${clsFor(.44-(ci.transition_score || 0))}">${fmtPct(ci.transition_score || 0)}</div>${renderScoreBar(ci.transition_score || 0)}<div class="hint">Cash-flow channels; CO2 concentration excluded</div></div>
-      <div class="signal-card"><div class="label">Conditional scenario tail</div><div class="value amber">${fmtPct(ci.scenario_tail_loss_rate || 0)}</div>${renderScoreBar(ci.scenario_tail_score || 0)}<div class="hint">Mean of two worst scenario losses</div></div>
-      <div class="signal-card"><div class="label">Evidence confidence</div><div class="value blue">${fmtPct(ci.confidence || 0)}</div>${renderScoreBar(ci.confidence || 0)}<div class="hint">Observed inputs plus proxy coverage</div></div>
+      <div class="signal-card"><div class="label">Physical evidence</div><div class="value amber">Sector / hazard context</div><div class="hint">Issuer loss is not calculable without verified facility and economic exposure.</div></div>
+      <div class="signal-card"><div class="label">Transition evidence</div><div class="value blue">NGFS + SEC history loaded</div><div class="hint">Official pathways and candidate financial history are loaded; issuer cash-flow translation remains blocked pending emissions and accounting tie-out.</div></div>
+      <div class="signal-card"><div class="label">Valuation evidence</div><div class="value amber">Conditional sensitivity</div><div class="hint">Not an audited issuer valuation or forecast return.</div></div>
+      <div class="signal-card"><div class="label">Evidence grade</div><div class="value blue">Proxy-dominant</div><div class="hint">Observed, derived, proxy, and missing fields are reported separately.</div></div>
     </div>`;
-  const affected = document.getElementById("clientAffectedTable");
-  if(affected){
-    const rows = ci.top_affected || [];
-    affected.innerHTML = `<tr><th>Holding</th><th>Sector</th><th>Weight</th><th>Physical</th><th>Transition</th><th>Action</th><th>Driver</th></tr>` +
-      rows.map(r=>`<tr>
-        <td><b>${r.ticker}</b></td>
-        <td>${r.sector}</td>
-        <td>${fmtPct(r.weight)}</td>
-        <td>${fmtPct(r.physical_risk)}</td>
-        <td>${fmtPct(r.transition_risk)}</td>
-        <td><span class="pill ${r.action.includes("Hedge") ? "high" : (r.action.includes("Watch") ? "info" : "ok")}">${r.action}</span></td>
-        <td>${r.driver || "-"}</td>
-      </tr>`).join("");
-  }
   const sourceTable = document.getElementById("clientSourceTable");
   if(sourceTable){
-    const rows = (ci.source_rows || []).slice(0, 8);
+    const sourceRows = ci.source_rows || [];
+    const prioritySourceNames = ["U.S. Treasury Daily Rates", "NGFS Scenarios", "SEC EDGAR APIs"];
+    const rows = [
+      ...prioritySourceNames.flatMap(name=>sourceRows.filter(r=>r.name === name)),
+      ...sourceRows.filter(r=>!prioritySourceNames.includes(r.name))
+    ].slice(0, 8);
     sourceTable.innerHTML = `<tr><th>Source</th><th>Risk Type</th><th>Status</th><th>Model Use</th></tr>` +
       rows.map(r=>`<tr>
         <td><b>${r.name}</b></td>
@@ -5638,37 +7824,31 @@ function renderInvestmentCommittee(){
   const el = document.getElementById("investmentCommitteeStrip");
   if(!el || !DASH) return;
   const ci = DASH.climate_intelligence || {};
-  const view = (OPTIMIZER && OPTIMIZER.investment_view) || {};
-  const budget = (OPTIMIZER && OPTIMIZER.risk_budget) || {};
-  const shortTerm = (CLIMATE_MODEL_LAB && CLIMATE_MODEL_LAB.short_term) || {};
-  const threeMonth = DAILY_RECO_BACKTEST && DAILY_RECO_BACKTEST.windows ? DAILY_RECO_BACKTEST.windows["3m"] : null;
-  const validation = threeMonth && threeMonth.summary
-    ? `${fmtPct(threeMonth.summary.recommended_total_return || 0)} net signal vs ${fmtPct(threeMonth.summary.benchmark_total_return || 0)} exposure-matched benchmark`
-    : "Walk-forward evidence loading";
   el.innerHTML = [
-    ["Strategic posture", view.posture || ci.risk_level || "Watch", view.strategic_action || ci.client_action || "-"],
-    ["Tactical decision", shortTerm.action || "Event overlay active", shortTerm.tactical_overlay_bps!==undefined ? `${fmtBps(shortTerm.tactical_overlay_bps)} from ${String(shortTerm.top_driver || "climate").replace("_"," ")}` : (view.tactical_action || "-")],
-    ["Largest portfolio risk", budget.largest_risk_contributor || "-", `${view.largest_risk || ""} Weighted tail proxy ${fmtPct(budget.weighted_tail_proxy || 0)}.`],
-    ["Validation evidence", validation, `${fmtPct(ci.confidence || 0)} model confidence; short windows are directional, not statistically conclusive.`]
+    ["Permitted use", "Scenario research", "Compare named target and reference pathways; do not interpret the result as a forecast."],
+    ["Physical status", "Issuer not calculable", "Verified facility location, economic exposure, damage function, and resilience evidence are required."],
+    ["Transition status", "Official pathways + history / issuer blocked", "NGFS 5.1 pathways and SEC candidate history are loaded; issuer cash-flow coefficients remain project calibrations pending emissions and accounting tie-out."],
+    ["Model promotion", "Not promoted", "Engineering checks do not authorize portfolio, shadow, paper, or production investment use."]
   ].map(c=>`<div class="decision-cell"><div class="eyebrow">${c[0]}</div><div class="decision">${c[1]}</div><div class="detail">${c[2]}</div></div>`).join("");
 }
 
 function renderDashboard(d){
   document.getElementById("timeBadge").textContent = "Updated " + d.generated_at;
-  document.getElementById("sourceBadge").textContent = "Market + official climate inputs";
+  document.getElementById("sourceBadge").textContent =
+    `Market + ${((d.climate_data_context || {}).source_mode || "climate data unavailable")}`;
   document.getElementById("regimeBadge").textContent = d.latest_regime.regime + " | signal " + d.latest_regime.signal_year;
   document.getElementById("kpiRegime").textContent = d.latest_regime.regime.replace(" Climate Risk","");
   document.getElementById("kpiRegime").className = "kpi-value " + (d.latest_regime.regime.includes("High") ? "red" : "green");
   const daily = d.daily_climate_signal || {};
-  document.getElementById("kpiScore").textContent = Number(daily.climate_alerts || 0).toLocaleString();
+  document.getElementById("kpiScore").textContent = fmtOptionalCount(daily.climate_alerts);
   document.getElementById("kpiScore").className = "kpi-value amber";
-  document.getElementById("kpiReturn").textContent = fmtPct(daily.daily_pressure || 0);
+  document.getElementById("kpiReturn").textContent = fmtIndex100(daily.daily_pressure);
   document.getElementById("kpiReturn").className = "kpi-value blue";
   document.getElementById("kpiExcess").textContent = String(daily.top_driver || "none").replace("_"," ");
   document.getElementById("kpiExcess").className = "kpi-value amber";
   document.getElementById("kpiDrawdown").textContent = d.climate_data_context.latest_year || "-";
   document.getElementById("kpiDrawdown").className = "kpi-value blue";
-  document.getElementById("kpiCvor").textContent = fmtPct(d.cvor_summary.scenario_tail_loss_rate || 0);
+  document.getElementById("kpiCvor").textContent = "Research only";
   document.getElementById("kpiCvor").className = "kpi-value amber";
   renderClientClimateIntelligence(d.climate_intelligence || {});
   renderScenarios(d.scenario_rows, d.cvor_summary || {});
@@ -5695,9 +7875,9 @@ function renderClimateData(d){
   const table = document.getElementById("climateDataTable");
   const daily = d.daily_climate_signal || {};
   const inputs = [
-    ["NWS active alerts", Number(daily.climate_alerts || 0).toLocaleString(), "Acute event intensity and tactical sector overlay", daily.source_mode || "Live input"],
-    ["NASA GISTEMP", `${Number(c.current_warming).toFixed(3)} C`, "Chronic warming state and physical-risk calibration", `Official vintage ${c.latest_year}`],
-    ["NOAA GML CO2", `${Number(c.co2_ppm).toFixed(2)} ppm`, "Climate-state context only", `Excluded from transition score | 10Y change ${Number(c.co2_10y_change).toFixed(2)} ppm`],
+    ["NWS active alerts", fmtOptionalCount(daily.climate_alerts), "Current hazard context only; not issuer exposure or loss", daily.decision_status || daily.source_mode || "Live input"],
+    ["NASA GISTEMP", c.current_warming == null ? "Unavailable" : `${Number(c.current_warming).toFixed(3)} C`, "Chronic warming state and physical-risk calibration", c.latest_year == null ? "Not calculable" : `Official completed-year vintage ${c.latest_year}`],
+    ["NOAA GML CO2", c.co2_ppm == null ? "Unavailable" : `${Number(c.co2_ppm).toFixed(2)} ppm`, "Climate-state context only; no allocation or transition-score effect", c.co2_10y_change == null ? "Not calculable" : `Excluded from decision score | 10Y change ${Number(c.co2_10y_change).toFixed(2)} ppm`],
     ["NCEI disasters", `${Number(c.disaster_10y_avg).toFixed(2)} / year`, "Historical acute-loss frequency calibration", `Official vintage ${c.latest_year}`],
     ["Derived climate context", Number(c.climate_pressure_multiplier).toFixed(3), "Cross-check for climate dashboards; not a scenario probability or valuation multiplier", c.source_mode || "Derived"],
   ];
@@ -5723,9 +7903,9 @@ function renderDailyClimateSignal(d){
   const source = s.source_mode || "-";
   if(cards){
     cards.innerHTML = [
-      ["Climate alerts", Number(s.climate_alerts || 0).toLocaleString()],
-      ["Daily pressure", fmtPct(s.daily_pressure || 0)],
-      ["Allocation overlay", fmtPct(s.allocation_pressure || 0)],
+      ["Climate alerts", fmtOptionalCount(s.climate_alerts)],
+      ["Daily pressure index", fmtIndex100(s.daily_pressure)],
+      ["Allocation overlay index", fmtIndex100(s.allocation_pressure)],
       ["Top driver", top.replace("_"," ")],
       ["Physical risk", fmtPct(ci.physical_score || 0)],
       ["Transition risk", fmtPct(ci.transition_score || 0)]
@@ -5761,11 +7941,11 @@ function renderScenarios(rows, summary={}){
       ["Scenario loss range", fmtPct(summary.scenario_loss_range_rate || 0), `${fmtPct(summary.scenario_loss_min_rate || 0)} to ${fmtPct(summary.scenario_loss_max_rate || 0)}`],
       ["Physical model-risk band", `${fmtPct(summary.physical_model_risk_loss_floor || 0)} to ${fmtPct(summary.physical_model_risk_loss_ceiling || 0)}`, "0.70x-1.30x damage coefficients; sensitivity, not confidence interval"],
       ["Occurrence probability", "Not assigned", "Scenario severity only"],
-      ["Metric definition", "Conditional Climate VaR", "Not regulatory Expected Shortfall"]
+      ["Metric definition", "Conditional value impact", "Project-calibrated sensitivity; not VaR or Expected Shortfall"]
     ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value">${c[1]}</div><div class="hint">${c[2]}</div></div>`).join("");
   }
   const table = document.getElementById("scenarioTable");
-  table.innerHTML = `<tr><th>Scenario</th><th>Interpretation</th><th>Carbon-price path</th><th>Value impact</th><th>Conditional Climate VaR</th><th>Physical model-risk band</th><th>Largest Sector Loss</th><th>Narrative</th></tr>` +
+  table.innerHTML = `<tr><th>Scenario</th><th>Interpretation</th><th>Carbon-price path</th><th>Value impact</th><th>Conditional loss sensitivity</th><th>Physical model-risk band</th><th>Largest Sector Loss</th><th>Narrative</th></tr>` +
     rows.map(r=>{
       const losses = Object.entries(r.sector_losses || {}).sort((a,b)=>b[1]-a[1]);
       const top = losses.length ? `${losses[0][0]} ${fmtPct(losses[0][1])}` : "-";
@@ -6453,9 +8633,8 @@ function drawLineChart(id, labels, series){
   if(labels.length){ ctx.fillText(labels[0],pad.l,h-10); ctx.fillText(labels[labels.length-1],w-pad.r-36,h-10); }
 }
 
-window.addEventListener("resize",()=>{ if(DASH) renderDashboard(DASH); if(OPTIMIZER) renderOptimizer(OPTIMIZER); if(DAILY_CLIMATE_BOARD) renderDailyClimateBoard(DAILY_CLIMATE_BOARD); });
+window.addEventListener("resize",()=>{ if(DASH) renderDashboard(DASH); if(OPTIMIZER) renderOptimizer(OPTIMIZER); });
 loadDashboard();
-setInterval(()=>{ loadDailyClimateBoard(); }, 300000);
 setInterval(()=>{ loadDailyRecommendationBacktest(); }, 3600000);
 setInterval(()=>{ loadDashboard(); }, 900000);
 </script>
@@ -6502,6 +8681,7 @@ class Handler(BaseHTTPRequestHandler):
                     horizon=q.get("horizon", ["2050"])[0],
                     sector=q.get("sector", ["Technology"])[0],
                     ticker=q.get("ticker", ["AAPL"])[0],
+                    assumption_case=q.get("assumption_case", ["base"])[0],
                 )
             )
             return
@@ -6542,7 +8722,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://127.0.0.1:{PORT}"
-    print(f"Jennison Climate-Finance Platform started: {url}")
+    print(f"Jennison Climate-Risk Research Platform started: {url}")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

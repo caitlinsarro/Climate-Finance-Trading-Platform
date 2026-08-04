@@ -1,0 +1,25 @@
+ticker,case,policy_coverage,pass_through,annual_emissions_decline,physical_cashflow_conversion,resilience,macro_cashflow_elasticity,source_class,allowed_use
+AAPL,low,0.5,0.85,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+AAPL,base,0.75,0.7,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+AAPL,high,1.0,0.5499999999999999,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+CAT,low,0.5,0.55,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+CAT,base,0.75,0.4,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+CAT,high,1.0,0.25,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+CVX,low,0.5,0.44999999999999996,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+CVX,base,0.75,0.3,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+CVX,high,1.0,0.15,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+DE,low,0.5,0.55,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+DE,base,0.75,0.4,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+DE,high,1.0,0.25,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+DUK,low,0.5,0.75,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+DUK,base,0.75,0.6,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+DUK,high,1.0,0.44999999999999996,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+MSFT,low,0.5,0.85,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+MSFT,base,0.75,0.7,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+MSFT,high,1.0,0.5499999999999999,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+NEE,low,0.5,0.75,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+NEE,base,0.75,0.6,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+NEE,high,1.0,0.44999999999999996,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+XOM,low,0.5,0.44999999999999996,0.05,0.0025,0.7,0.35,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+XOM,base,0.75,0.3,0.03,0.005,0.5,0.6,Model assumption,prototype scenario sensitivity; editable and not issuer-observed
+XOM,high,1.0,0.15,0.01,0.01,0.3,1.0,Model assumption,prototype scenario sensitivity; editable and not issuer-observed

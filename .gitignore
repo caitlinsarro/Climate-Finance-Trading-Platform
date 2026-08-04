@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 env/
+.env
+.env.local
+.env.*.local
 
 server.out.log
 server.err.log
@@ -12,6 +15,9 @@ server.out
 server.err
 
 data/*.json
+# Governed public-source bytes stay local and are identified by manifest hashes.
+# Large raw archives must not be committed to GitHub.
+data/releases/**/raw/
 
 tmp/
 *.aux

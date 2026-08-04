@@ -1,0 +1,25 @@
+ticker,case,scope1_policy_coverage,direct_cost_pass_through,scope2_cost_incidence,scope3_value_chain_incidence,annual_emissions_decline,covered_ppe_share,insurance_adaptation_recovery,labour_cost_share,labour_productivity_to_fcff,macro_cashflow_elasticity,source_class,allowed_use
+AAPL,low,0.5,0.7,0.25,0.01,0.05,0.06,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+AAPL,base,0.75,0.5,0.5,0.02,0.03,0.1,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+AAPL,high,1.0,0.3,0.75,0.04,0.01,0.135,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+CAT,low,0.5,0.7,0.25,0.004,0.05,0.15,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+CAT,base,0.75,0.5,0.5,0.008,0.03,0.25,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+CAT,high,1.0,0.3,0.75,0.016,0.01,0.3375,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+CVX,low,0.5,0.7,0.25,0.0015,0.05,0.27,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+CVX,base,0.75,0.5,0.5,0.003,0.03,0.45,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+CVX,high,1.0,0.3,0.75,0.006,0.01,0.6075,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+DE,low,0.5,0.7,0.25,0.004,0.05,0.15,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+DE,base,0.75,0.5,0.5,0.008,0.03,0.25,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+DE,high,1.0,0.3,0.75,0.016,0.01,0.3375,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+DUK,low,0.5,0.7,0.25,0.0025,0.05,0.39,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+DUK,base,0.75,0.5,0.5,0.005,0.03,0.65,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+DUK,high,1.0,0.3,0.75,0.01,0.01,0.8775000000000001,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+MSFT,low,0.5,0.7,0.25,0.01,0.05,0.06,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+MSFT,base,0.75,0.5,0.5,0.02,0.03,0.1,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+MSFT,high,1.0,0.3,0.75,0.04,0.01,0.135,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+NEE,low,0.5,0.7,0.25,0.0025,0.05,0.39,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+NEE,base,0.75,0.5,0.5,0.005,0.03,0.65,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+NEE,high,1.0,0.3,0.75,0.01,0.01,0.8775000000000001,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+XOM,low,0.5,0.7,0.25,0.0015,0.05,0.27,0.7,0.05,0.15,0.35,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+XOM,base,0.75,0.5,0.5,0.003,0.03,0.45,0.5,0.1,0.25,0.6,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed
+XOM,high,1.0,0.3,0.75,0.006,0.01,0.6075,0.3,0.2,0.4,1.0,Model assumption,Low/Base/High prototype sensitivity only; not issuer-observed

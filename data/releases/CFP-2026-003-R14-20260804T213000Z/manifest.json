@@ -1,0 +1,41 @@
+{
+  "release_id": "CFP-2026-003-R14-20260804T213000Z",
+  "feature_id": "CFP-2026-003",
+  "created_at": "2026-08-04T21:30:00Z",
+  "supersedes": "CFP-2026-003-R13-20260804T193000Z",
+  "status": "prototype valuation inputs; observed and assumed layers separated",
+  "processed_paths": [
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/processed/eight_issuer_valuation_inputs_2025.csv",
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/processed/eight_issuer_model_assumptions.csv",
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/raw/market/yfinance_5y_monthly_adjusted_close.csv",
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/raw/market/yfinance_public_market_fields.json"
+  ],
+  "sha256": {
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/processed/eight_issuer_valuation_inputs_2025.csv": "29d90457751cba33451ba73c73a1a3b7cb32055fde2e70e7cf279051b62e3239",
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/processed/eight_issuer_model_assumptions.csv": "97e2eb9018e60ac29fc7ea96cf0bec8242adcf4626ef8277c6311a80fef28a4d",
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/raw/market/yfinance_5y_monthly_adjusted_close.csv": "94019123aec5b6d9812f66421f17542666dae4687ad4380e9b4ea99b3d08e47c",
+    "data/releases/CFP-2026-003-R14-20260804T213000Z/raw/market/yfinance_public_market_fields.json": "7c21d865ae66020359bcb0d43b9a731fd00bd9ff1ade23e5f7bf233a7c43429f"
+  },
+  "source_entries": [
+    {
+      "source_class": "official issuer-filed SEC XBRL",
+      "source_url": "https://www.sec.gov/dera/data/financial-statement-data-sets",
+      "allowed_use": "financial baseline"
+    },
+    {
+      "source_class": "official U.S. Treasury",
+      "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=2026",
+      "allowed_use": "risk-free WACC leg"
+    },
+    {
+      "source_class": "public market-data cache",
+      "source_url": "https://finance.yahoo.com/",
+      "allowed_use": "five-year monthly beta"
+    },
+    {
+      "source_class": "project assumptions",
+      "allowed_use": "Low/Base/High sensitivity only"
+    }
+  ],
+  "valuation_rule": "Annual target/reference FCFF paths use common WACC; output is modeled value impact, not price target or forecast probability."
+}

@@ -1,0 +1,105 @@
+{
+  "created_at": "2026-08-01T01:18:17+00:00",
+  "credential_values_stored": false,
+  "duk_pilot": {
+    "coordinate_matches": 40,
+    "direct_emitter_matches": 40,
+    "epa_year": 2023,
+    "ngfs_source_release_id": "CFP-2026-003-R5-20260731T2351Z",
+    "ownership_adjusted_nonbiogenic_co2_tonnes": 72003079.35472,
+    "parent_records": 49,
+    "physical_financial_status": "not calculable",
+    "processed_paths": [
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_epa_facility_emissions_2023.csv",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_facility_fema_context_2025.csv",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_sec_fcff_bridge_2025.csv",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_carbon_price_sensitivity.csv",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/pilot_candidate_screen.csv"
+    ],
+    "processed_sha256": {
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_carbon_price_sensitivity.csv": "50ba2a8071fad820ccfc86b24b2c3e57c6d8f39ee797a3111c3aaa93a2e80993",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_epa_facility_emissions_2023.csv": "ac0195cce5c472920f7198410b5416eebf1521571d7ad4126ffb0cede234e3f0",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_facility_fema_context_2025.csv": "b3591b5c9b6136a210a0324dc3eae7fd99bfd0e247a40f4e1591d411d0640020",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/duk_sec_fcff_bridge_2025.csv": "d4c0eb46b040c72c98026505e12676d4cf793319fd38ffd844491a5285cd990f",
+      "data/releases/CFP-2026-003-R10-20260801T015000Z/processed/pilot_candidate_screen.csv": "ce5aae9040e46c61e505d40c321e8fb2700b2aaac9131195230140701d0fc635"
+    },
+    "sec_source_release_id": "CFP-2026-003-R8-20260801T005207Z",
+    "ticker": "DUK",
+    "valuation_status": "not calculable"
+  },
+  "feature_id": "CFP-2026-003",
+  "release_id": "CFP-2026-003-R10-20260801T015000Z",
+  "source_entries": [
+    {
+      "allowed_use": "facility ownership, reported emissions, coordinates, and power-sector context",
+      "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "limitation": "GHGRP does not cover every parent-company emission or establish issuer financial loss.",
+      "raw_bytes": 21213301,
+      "raw_path": "data/releases/CFP-2026-003-R10-20260801T015000Z/raw/epa/egrid2023_data_rev2.xlsx",
+      "raw_sha256": "895cd81dd8662406189ad8adf5a2578dcb362cdb5cff7cca81b10ee6bd2447c6",
+      "retrieved_at": "2026-08-01T01:18:17+00:00",
+      "source_class": "official EPA",
+      "source_id": "SRC-EPA-EGRID-2023-R2",
+      "source_url": "https://www.epa.gov/system/files/documents/2025-06/egrid2023_data_rev2.xlsx",
+      "source_vintage": "2023"
+    },
+    {
+      "allowed_use": "facility ownership, reported emissions, coordinates, and power-sector context",
+      "content_type": "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+      "limitation": "GHGRP does not cover every parent-company emission or establish issuer financial loss.",
+      "raw_bytes": 7984329,
+      "raw_path": "data/releases/CFP-2026-003-R10-20260801T015000Z/raw/epa/ghgp_data_parent_company.xlsb",
+      "raw_sha256": "5613dd8454b08deb160e3f1dec18c1a9b45464bc0ef8453c97989ea0d4fdbce2",
+      "retrieved_at": "2026-08-01T01:18:17+00:00",
+      "source_class": "official EPA",
+      "source_id": "SRC-EPA-GHGRP-PARENT-2023",
+      "source_url": "https://www.epa.gov/system/files/other-files/2024-10/ghgp_data_parent_company.xlsb",
+      "source_vintage": "2023"
+    },
+    {
+      "allowed_use": "facility ownership, reported emissions, coordinates, and power-sector context",
+      "content_type": "application/zip",
+      "limitation": "GHGRP does not cover every parent-company emission or establish issuer financial loss.",
+      "raw_bytes": 28389973,
+      "raw_path": "data/releases/CFP-2026-003-R10-20260801T015000Z/raw/epa/2023_data_summary_spreadsheets.zip",
+      "raw_sha256": "895349c8008b7962dba68659c8187cec6b340d68be84ccb3f0e7fb6037bf8345",
+      "retrieved_at": "2026-08-01T01:18:17+00:00",
+      "source_class": "official EPA",
+      "source_id": "SRC-EPA-GHGRP-SUMMARY-2023",
+      "source_url": "https://www.epa.gov/system/files/other-files/2024-10/2023_data_summary_spreadsheets.zip",
+      "source_vintage": "2023"
+    },
+    {
+      "allowed_use": "broad county hazard context only",
+      "limitation": "Community-level index/EAL is not facility damage, issuer probability, or issuer loss.",
+      "raw_paths": [
+        "data/releases/CFP-2026-003-R10-20260801T015000Z/raw/fema_nri/counties_offset_0.json",
+        "data/releases/CFP-2026-003-R10-20260801T015000Z/raw/fema_nri/counties_offset_2000.json"
+      ],
+      "raw_sha256": [
+        "4fdd992b6094c2386e9a8a23a83790848e0fd72a327bbac916cc000c3fa29083",
+        "fc43a30315565ac81c45001e8797b3fb1fbcc653b66943527b910511109da6dc"
+      ],
+      "record_count": 3232,
+      "retrieved_at": "2026-08-01T01:18:17+00:00",
+      "source_class": "official FEMA ArcGIS feature service",
+      "source_id": "SRC-FEMA-NRI-COUNTIES-2025",
+      "source_url": "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0",
+      "source_vintage": "December 2025 v1.20"
+    },
+    {
+      "allowed_use": "manual financial-statement line-item tie-out",
+      "content_type": "text/html",
+      "limitation": "Issuer filing supports line items but does not validate the project FCFF method or climate forecast.",
+      "raw_bytes": 16080176,
+      "raw_path": "data/releases/CFP-2026-003-R10-20260801T015000Z/raw/sec/duk-20251231.htm",
+      "raw_sha256": "638cd653df525f8be9ec031196a2cb9ae2b44f55d719911129f9a406b3974c8f",
+      "retrieved_at": "2026-08-01T01:18:17+00:00",
+      "source_class": "official issuer filing",
+      "source_id": "SRC-SEC-DUK-2025-10K",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231.htm",
+      "source_vintage": "2025"
+    }
+  ],
+  "updated_at": "2026-08-01T01:18:22+00:00"
+}

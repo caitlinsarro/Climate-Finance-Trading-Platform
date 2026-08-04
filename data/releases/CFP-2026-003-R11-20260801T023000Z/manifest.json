@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-08-01T01:35:16+00:00",
+  "credential_values_stored": false,
+  "eight_issuer_demo": {
+    "allowed_use": "client prototype screening and DUK deep dive",
+    "evidence_source_release_id": "CFP-2026-003-R10-20260801T015000Z",
+    "fcf_definition": "operating cash flow - capital expenditure",
+    "processed_path": "data/releases/CFP-2026-003-R11-20260801T023000Z/processed/eight_issuer_demo_2025.csv",
+    "processed_sha256": "5555817c13cb34c3fc706eec8b9d3879438ee1c817af7a7dbeddd78c37efebf8",
+    "record_count": 8,
+    "sec_source_release_id": "CFP-2026-003-R8-20260801T005207Z",
+    "tickers": [
+      "AAPL",
+      "CAT",
+      "CVX",
+      "DE",
+      "DUK",
+      "MSFT",
+      "NEE",
+      "XOM"
+    ]
+  },
+  "feature_id": "CFP-2026-003",
+  "release_id": "CFP-2026-003-R11-20260801T023000Z",
+  "source_entries": [],
+  "updated_at": "2026-08-01T01:35:16+00:00"
+}

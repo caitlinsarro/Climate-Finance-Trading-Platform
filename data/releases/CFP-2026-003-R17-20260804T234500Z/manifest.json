@@ -1,0 +1,91 @@
+{
+  "release_id": "CFP-2026-003-R17-20260804T234500Z",
+  "feature_id": "CFP-2026-003",
+  "created_at": "2026-08-04T20:14:49+00:00",
+  "supersedes": "CFP-2026-003-R14-20260804T213000Z",
+  "status": "R15 public-data extension; engineering prototype, not model promotion",
+  "climate_evidence": {
+    "processed_paths": [
+      "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_scope123_2024.csv",
+      "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_sec_ppe_2025.csv",
+      "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_facility_fema_eal.csv",
+      "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_fema_eal_summary.csv",
+      "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/ngfs_cie_usa_labour_productivity_2025_2050.csv",
+      "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_r15_model_assumptions.csv"
+    ]
+  },
+  "sha256": {
+    "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_scope123_2024.csv": "7530f9f03a5319752cffd1d2af356ef73ebc58e30f23fb324e9e9fb66efd2e02",
+    "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_sec_ppe_2025.csv": "a0b0ac7c84960f8226e8fdb84c061e61ed4bd0fc34deab33fa641af7ab3cad98",
+    "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_facility_fema_eal.csv": "3227f4d577c75045bbeda6aa25f39fbb7e45926949788bfb186be76e23b20ad2",
+    "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_fema_eal_summary.csv": "f7bf91797bd41e6128e694144d3e05f60971f4e57d8a03027431f2339b42092a",
+    "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/ngfs_cie_usa_labour_productivity_2025_2050.csv": "d40597f39811b8da090368c92d7c8d218986a7e163544cb8f2f4cc656f22de7a",
+    "data/releases/CFP-2026-003-R17-20260804T234500Z/processed/eight_issuer_r15_model_assumptions.csv": "4084e730a5999b8ca82778208cb616ad513d8f53269851d0a7cf2e84171751a8"
+  },
+  "source_entries": [
+    {
+      "source": "Apple 2025 Environmental Progress Report",
+      "url": "https://www.apple.com/environment/pdf/Apple_Environmental_Progress_Report_2025.pdf",
+      "raw_path": "data/releases/CFP-2026-003-R17-20260804T234500Z/raw/issuer_reports/apple.pdf",
+      "sha256": "597676e8b48ac45529303abc7ef47425ca62ff4efc3a375962a077a033525f74"
+    },
+    {
+      "source": "Caterpillar 2025 Sustainability Report",
+      "url": "https://s7d2.scene7.com/is/content/Caterpillar/CM20260508-cac43-ec231",
+      "raw_path": "data/releases/CFP-2026-003-R17-20260804T234500Z/raw/issuer_reports/cat-data.pdf",
+      "sha256": "2389b874742b4a3b274292f5caa60152648ff99e1140513d4fdee88fd3ddb52e"
+    },
+    {
+      "source": "Chevron 2024 GHG Assurance Statement",
+      "url": "https://www.chevron.com/-/media/chevron/sustainability/documents/ghg-Assurance-Statement-2024.pdf",
+      "raw_path": "",
+      "sha256": ""
+    },
+    {
+      "source": "Deere 2024 Sustainability Disclosure",
+      "url": "https://www.deere.com/assets/pdfs/common/our-company/sustainability/data-book-2024.pdf",
+      "raw_path": "data/releases/CFP-2026-003-R17-20260804T234500Z/raw/issuer_reports/deere-2024.pdf",
+      "sha256": "8305e6d952db8e0494c3081c977311819eeb022735a3fc0179d0f8c9ed56fffe"
+    },
+    {
+      "source": "Duke Energy 2025 Sustainability Metrics",
+      "url": "https://s201.q4cdn.com/583395453/files/doc_downloads/2026/2025-Sustainability-Metrics-Center.pdf",
+      "raw_path": "data/releases/CFP-2026-003-R17-20260804T234500Z/raw/issuer_reports/duk-metrics.pdf",
+      "sha256": "6504844f93ae951a006b5495fb2120fc5cb2af5d6fb5c7f60f19f9d558898213"
+    },
+    {
+      "source": "Microsoft 2025 Environmental Data Fact Sheet",
+      "url": "https://aka.ms/SustainabilityFactsheet2025",
+      "raw_path": "data/releases/CFP-2026-003-R17-20260804T234500Z/raw/issuer_reports/microsoft-fact-sheet.pdf",
+      "sha256": "9283b1e85005a050fb7732c2eb25da6918bf46cafe5e6903d81063c81f466174"
+    },
+    {
+      "source": "NextEra Energy 2025 Data Appendix",
+      "url": "https://www.investor.nexteraenergy.com/~/media/Files/N/NEE-IR/Sustainability/2025/Data%20Appendix.pdf",
+      "raw_path": "data/releases/CFP-2026-003-R17-20260804T234500Z/raw/issuer_reports/nextera.pdf",
+      "sha256": "f544037674f10f3543698d57168fa483438aa490623c864e8afb9a7565b8d320"
+    },
+    {
+      "source": "ExxonMobil 2025 Advancing Climate Solutions",
+      "url": "https://corporate.exxonmobil.com/-/media/global/files/advancing-climate-solutions/2025/advancing-climate-solutions-report.pdf",
+      "raw_path": "data/releases/CFP-2026-003-R17-20260804T234500Z/raw/issuer_reports/exxon-2025.pdf",
+      "sha256": "9789adf26cfade347df72b4e6387d3c4a95e38c49ad97f97d888d82274cabd6c"
+    },
+    {
+      "source": "SEC Companyfacts",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/",
+      "allowed_use": "issuer net PP&E exposure base"
+    },
+    {
+      "source": "FEMA National Risk Index",
+      "url": "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0",
+      "allowed_use": "county building expected annual loss rate"
+    },
+    {
+      "source": "NGFS Climate Impact Explorer",
+      "url": "https://climate-impact-explorer.climateanalytics.org/data-download/",
+      "allowed_use": "scenario-conditioned chronic physical pathway"
+    }
+  ],
+  "calculation_boundary": "Scope 1/2/3 are separate; FEMA EAL rates are not FEMA risk scores; financial conversions remain Low/Base/High assumptions."
+}
