@@ -445,3 +445,77 @@ R15 will therefore replace those two shortcuts where public evidence permits:
 The scope remains the eight client-demo issuers. R15 is an engineering and
 research-prototype iteration; it is not model promotion or a vendor-equivalent
 Climate VaR claim.
+
+## Increment 11 replanning decision — reproducible report chart export
+
+The client report now needs cross-issuer and cross-scenario figures rather than
+a DUK-only worked example. The chart layer will call the governed
+`climate_model_lab_payload` calculation for the same eight issuers and will not
+reimplement, override, or hand-enter model results.
+
+The export will cover `AAPL`, `CAT`, `CVX`, `DE`, `DUK`, `MSFT`, `NEE`, and
+`XOM`, multiple target/reference scenario pairs, and Low/Base/High assumption
+cases. It will retain release ID, horizon, source classifications, and missing
+or non-calculable status in machine-readable CSV output. Charts may compare
+modeled scenario sensitivities, but must label them as conditional prototype
+outputs rather than observed loss, probability, forecast return, vendor
+benchmark, or investment recommendation.
+
+## Increment 12 replanning decision — client-review diagnostics and workbook
+
+Client review identified four presentation risks in the first chart export:
+
+- DUK's Net Zero target value reaches the model's zero-value floor, so `-100%`
+  is a boundary result rather than a precise Climate VaR point estimate;
+- Current Policies versus Delayed Transition can produce very large positive
+  relative percentages when the reference enterprise value is small;
+- AAPL and MSFT use a FEMA fallback because the governed file has no matched
+  issuer facilities, while other issuers have materially different facility
+  match coverage;
+- the Base macro cash-flow elasticity is common across issuers and is therefore
+  a common overlay rather than an independently estimated issuer beta.
+
+Replanning will not hide or winsorize the stored model results. Instead, the
+export will add explicit floor, denominator, physical-confidence, proxy and
+macro-specificity diagnostics; revise the figures around range and comparative
+interpretation; and build an auditable Excel workbook that separates inputs,
+outputs, summaries and checks. The R17 formulas remain unchanged except for
+correcting the DUK report bridge to use 2050 reference and target terminal FCFF
+rather than the 2025 normalized FCFF base.
+
+## Increment 13 replanning decision — repair-review integration
+
+The independent repair report and reviewed workbook identify calculation and
+communication risks that were not fully resolved by Increment 12. Because the
+repository contains the original calculation engine, this increment will amend
+the engine and client payload rather than merely adding a review overlay.
+
+- Transition cost MUST expose target and reference emissions-price costs and
+  calculate their difference. Pass-through is applied once inside each
+  scenario's net cost and is not subtracted again downstream.
+- The annual reference and target FCFF paths, channel pressure paths, discount
+  factors, terminal values and any cash-flow floor amount MUST be returned for
+  audit and test purposes.
+- `normalized_fcff_usd` MUST retain its exact accounting status. CFO less CapEx
+  plus after-tax interest is an unlevered-FCFF approximation; a maintenance-
+  CapEx substitution is a prototype demonstration assumption and cannot be
+  called observed SEC FCFF.
+- Forecast-period FCFF growth, policy incidence, pass-through, Scope 2/3
+  incidence, covered PP&E, recovery, chronic conversion, acute scaling, macro
+  elasticity and terminal growth remain prototype demonstration assumptions
+  unless a source status says otherwise.
+- Macro/supply, physical and direct-transition channels MUST carry a driver
+  registry and exclusion statement so the active engine does not count carbon
+  cost or physical damage again in macro/supply.
+- Results MUST identify terminal-FCFF clipping, unapplied cost, zero-EV floors,
+  denominator-sensitive relative changes and physical-proxy use. These states
+  remain visible and restrict ordinary cross-issuer ranking.
+- The model will continue to report enterprise-value sensitivity only. Missing
+  cash, net debt, leases, pensions, minority interests, non-operating assets and
+  diluted shares will be marked unavailable; no equity value or share-price
+  impact will be inferred.
+
+The user has explicitly permitted missing calibration inputs to remain in the
+prototype. Every such input MUST be labelled `Prototype demonstration
+assumption - not issuer-observed` in the payload and client-facing calculation
+table. This permission does not change the research-only promotion status.

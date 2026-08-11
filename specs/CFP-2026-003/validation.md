@@ -585,3 +585,149 @@ promotion remain Iterate because facility asset allocation, insurance and
 adaptation, Scope 2/3 incidence, acute scenario scaling, macro elasticities,
 terminal growth, and ERP still contain assumptions and have not been externally
 benchmarked or independently approved.
+
+## Increment 11 validation — report chart and scenario comparison export
+
+The export called `climate_model_lab_payload` for AAPL, CAT, CVX, DE, DUK,
+MSFT, NEE and XOM across five governed target/reference comparisons and the
+Low/Base/High cases at 2050. It produced 120 calculable rows in
+`reports/data/eight_issuer_scenario_results_2050.csv` and eight issuer-input
+rows in `reports/data/eight_issuer_model_inputs.csv`. All rows identify the R17
+release and preserve scenario, case, channel, FCFF, WACC, emissions, FEMA and
+assumption fields.
+
+Reconciliation checks:
+
+- the issuer, scenario-pair and assumption-case Cartesian product is complete;
+- DUK Current Policies versus baseline Base remains `-4.735551%`, equal to the
+  governed application payload rather than a copied chart value;
+- transition, physical and macro/supply value contributions reconcile to total
+  value impact for every calculable row;
+- missing values pass through as blank/`None`; numeric zero remains distinct;
+- no application valuation, channel or DCF formula was duplicated or changed.
+
+Seven independent report figures and one contact sheet were rendered and
+visually inspected. The heatmap annotates uncapped results while capping colour
+at ±100% so the DUK terminal cash-flow-floor outcomes do not erase smaller
+cross-issuer differences. The physical-evidence chart explicitly names AAPL
+and MSFT as lacking an issuer facility-match denominator rather than plotting
+that missing coverage as zero. Every figure carries the research-prototype,
+conditional-comparison and release limitation.
+
+Automated evidence:
+
+```text
+.venv/bin/python scripts/build_report_charts.py
+Built 120 model rows (120 calculable); 7 figures and 1 contact sheet
+
+.venv/bin/python -m unittest discover -v
+Ran 90 tests in 28.476s — OK
+
+.venv/bin/python -m py_compile app.py scripts/build_report_charts.py
+git diff --check
+```
+
+Increment 11 conclusion: Accepted for reproducible report and presentation
+export. The underlying model remains Iterate/research-only; the figures do not
+constitute vendor replication, model validation, a price target or an
+investment recommendation.
+
+## Increment 12 validation — client-review diagnostics and workbook
+
+The governed export still contains 120 calculable rows: eight issuers, five
+target/reference comparisons and Low/Base/High assumption cases at 2050. The
+R17 valuation logic was not changed. The reporting layer now adds the boundary,
+data-quality and assumption diagnostics requested during client review.
+
+Diagnostics and reconciliation checks:
+
+- DUK's FCFF chart now bridges its 2050 reference terminal FCFF of `$2.513bn`
+  through transition `-$0.030bn`, physical `-$0.079bn` and macro/supply
+  `-$0.049bn` to target terminal FCFF of `$2.354bn`;
+- the DUK Net Zero Base target enterprise-value floor remains visible at
+  `-100%` and is labelled as a boundary result rather than a point estimate;
+- DUK Current Policies versus Delayed Transition remains visible at
+  `+425.67%` and is flagged as denominator-sensitive rather than interpreted as
+  a forecast return;
+- physical-data confidence is High above 80% issuer facility-to-FEMA match
+  coverage, Medium from 50% through 80%, Low below 50%, and Unverified where
+  issuer facilities are absent;
+- AAPL and MSFT are explicitly Unverified and retain a blank issuer-specific
+  FEMA rate because the model uses a disclosed cross-issuer proxy for them;
+- the common scenario macro elasticity and the separate issuer-specific SEC
+  CapEx/CFO dependency scale are both exported and labelled;
+- Scope 2 and Scope 3 financial-incidence assumptions remain separate from
+  reported emissions and visible in the input export.
+
+Ten figures plus the contact sheet were regenerated and visually inspected.
+The new Net Zero range, channel-mix and extreme-case figures retain raw values,
+while heatmap colour alone is capped for readability. No result was removed or
+winsorized.
+
+`reports/Eight_Issuer_Climate_Stress_Test.xlsx` was built from the governed CSV
+exports with seven sheets: Read Me, Inputs, Scenario Results, Base Matrix, Data
+Quality, Checks and Source Audit. The Base Matrix and Checks sheets are
+formula-driven. Rendered-sheet inspection found no clipped decision fields or
+formula errors. The workbook reports overall export status `OK`, including the
+120-row/8-issuer/release checks, DUK attribution and terminal-FCFF tie-outs,
+physical confidence, proxy count, facility coverage, EV-floor flag and common
+macro-assumption count.
+
+Automated evidence:
+
+```text
+.venv/bin/python scripts/build_report_charts.py
+Built 120 model rows (120 calculable); 10 figures and 1 contact sheet
+
+.venv/bin/python -m unittest discover -v
+Ran 93 tests in 28.095s — OK
+
+.venv/bin/python -m py_compile app.py scripts/build_report_charts.py
+git diff --check
+```
+
+Increment 12 conclusion: Accepted for client-review chart and workbook use.
+The analytical layer is reconciled and transparent, but independent model
+validation and investment/model promotion remain Iterate.
+
+## Increment 13 validation — repair-review integration
+
+The repair review was traced into the source engine, API, compact client UI,
+calculation-workflow PDF and reviewed workbook. The repaired engine now exposes
+target and reference transition costs separately, applies pass-through once,
+returns the annual FCFF and discount path, and stops at enterprise value when a
+governed EV-to-equity bridge is unavailable.
+
+Decision diagnostics now include the symmetric enterprise-value difference,
+dollar EV delta, FCFF floor and unapplied cost, denominator sensitivity,
+physical-proxy use and `RANKABLE / CAUTION / EXCLUDE` status. Every remaining
+calibration input that is not issuer-observed is labelled `Prototype
+demonstration assumption - not issuer-observed`; it is retained only to
+demonstrate the scenario-to-FCFF-to-enterprise-value workflow.
+
+Validation evidence:
+
+```text
+.venv/bin/python -m unittest discover -v
+Ran 96 tests in 51.250s — OK
+
+.venv/bin/python -m py_compile app.py scripts/build_report_charts.py
+git diff --check
+```
+
+The six-page calculation PDF was rendered and visually reviewed. The revised
+12-sheet workbook was rendered sheet by sheet, and its formula-error scan found
+no `#REF!`, `#DIV/0!`, `#VALUE!`, `#NAME?` or `#N/A` errors.
+
+The full chart pack was regenerated after repair integration. All chart footers
+now label non-observed calibration inputs as prototype demonstration
+assumptions. The new eleventh chart traces the DUK result from observed data and
+scenario paths through demo assumptions to annual 2050 FCFF pressure and
+enterprise-value sensitivity, and explicitly blocks an equity/share-price
+interpretation. Fifteen targeted chart and valuation tests passed after this
+regeneration.
+
+Increment 13 conclusion: Engineering Accepted for repair integration and
+demonstration disclosure. Quant/model promotion remains Iterate because the
+remaining incidence, physical conversion, macro transmission, forecast-growth
+and EV-to-equity inputs are not independently estimated or validated.

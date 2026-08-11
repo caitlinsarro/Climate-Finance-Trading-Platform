@@ -98,3 +98,48 @@
    and browser-layout tests for AAPL and DUK plus the eight-issuer matrix.
 7. Write validation evidence, record an Accepted/Iterate/Rejected engineering
    decision, and update the roadmap without implying production model approval.
+
+## Increment 11 implementation plan
+
+1. Add a Python report-export script that calls the governed issuer valuation
+   payload for the eight demo issuers, five scenario comparisons, and
+   Low/Base/High cases.
+2. Write tidy issuer-scenario and issuer-input CSV files with model release,
+   horizon, scenario, assumption, source, and calculability fields.
+3. Generate report-ready PNG figures for value impact, channel attribution,
+   scenario heatmap, uncertainty range, emissions, and physical exposure.
+4. Add automated tests for row counts, DUK reconciliation, equal-scenario
+   conservation, missing-value behavior, and figure creation.
+5. Record validation evidence and update the decision and roadmap while
+   preserving the research-only promotion boundary.
+
+## Increment 12 implementation plan
+
+1. Extend the governed report export with result-boundary, facility-coverage,
+   proxy and common-assumption diagnostics without changing R17 valuation logic.
+2. Correct the DUK chart bridge to the 2050 reference/target terminal FCFF and
+   add reconciliation tests.
+3. Rebuild the chart pack around cross-scenario value, assumption range,
+   channel mix, physical confidence and extreme-case diagnostics.
+4. Build a formatted Excel workbook with formula-driven summaries and checks
+   using the two governed CSV exports as source sheets.
+5. Render every workbook sheet and revised figure, resolve formula/layout
+   defects, run the full regression suite and record evidence.
+6. Only after the charts and workbook are accepted, use those final assets in
+   the client prototype presentation.
+
+## Increment 13 implementation plan
+
+1. Add explicit source-status and prototype-assumption classifications to the
+   issuer valuation payload without replacing observed values.
+2. Refactor the annual transition calculation to retain target and reference
+   gross/net costs by scope and prove pass-through is applied once.
+3. Return the annual FCFF/discount audit trail and terminal-value bridge.
+4. Add floor, unapplied-cost, symmetric-EV, denominator and physical-proxy
+   diagnostics plus an EV-to-equity not-calculable gate.
+5. Update the compact client disclosure to show the calculation boundary and
+   assumption labels without adding a verbose methodology portal.
+6. Regenerate report exports/workbook inputs, add regression tests and run the
+   full suite, API tie-outs and local browser visual verification.
+7. Record validation, engineering decision and roadmap state separately from
+   model promotion.

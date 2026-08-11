@@ -3,3 +3,4 @@ pandas
 yfinance
 openpyxl
 pyxlsb>=1.0.10
+matplotlib>=3.8

@@ -2509,6 +2509,8 @@ def issuer_prototype_valuation(
     Observed inputs and model assumptions are returned separately.  A zero
     cash-flow floor prevents an assumption stress from creating a negative
     enterprise value; Shapley attribution preserves exact reconciliation.
+    The returned audit trail exposes target and reference annual costs so the
+    client layer never has to infer the calculation from a terminal headline.
     """
     symbol = yahoo_symbol(ticker)
     case = assumption_case if assumption_case in {"low", "base", "high"} else "base"
@@ -2557,6 +2559,10 @@ def issuer_prototype_valuation(
     macro_dependency_scale = clamp(0.50 + safe_float(capex_to_cfo, 0.50), 0.50, 2.00)
     eal_rate = safe_float(enhanced_physical.get("emissions_weighted_building_eal_rate"), None)
     eal_source = "Issuer EPA facilities × FEMA county building EAL rate"
+    facility_count = int(safe_float(enhanced_physical.get("facility_count"), 0))
+    fema_matches = int(safe_float(enhanced_physical.get("fema_eal_matches"), 0))
+    facility_match_coverage = fema_matches / facility_count if facility_count else 0.0
+    physical_proxy_used = False
     if eal_rate is None:
         observed_eal = [
             safe_float(row.get("emissions_weighted_building_eal_rate"), None)
@@ -2567,6 +2573,7 @@ def issuer_prototype_valuation(
             middle = len(observed_eal) // 2
             eal_rate = observed_eal[middle] if len(observed_eal) % 2 else (observed_eal[middle - 1] + observed_eal[middle]) / 2.0
             eal_source = "Eight-issuer observed FEMA EAL median fallback"
+            physical_proxy_used = True
 
     cie_by_scenario = {}
     for row in climate_evidence.get("cie_rows", []):
@@ -2607,7 +2614,11 @@ def issuer_prototype_valuation(
             + safe_float(scenario.get("supply_chain_shock_2050"), 0.0)
         )
         components = {"transition": {}, "physical": {}, "macro_supply": {}}
-        detail = {"scope1": {}, "scope2": {}, "scope3": {}, "acute": {}, "chronic": {}}
+        detail = {
+            "scope1": {}, "scope2": {}, "scope3": {},
+            "scope1_gross": {}, "scope2_gross": {}, "scope3_gross": {},
+            "acute": {}, "chronic": {},
+        }
         chronic_path = cie_path(scenario_key)
         for year in years:
             elapsed = year - base_year
@@ -2615,9 +2626,15 @@ def issuer_prototype_valuation(
             baseline = base_fcff * ((1.0 + growth) ** elapsed)
             decline = (1.0 - emissions_decline) ** elapsed
             carbon_price = safe_float(price_path.get(year), 0.0)
-            detail["scope1"][year] = max(0.0, tonnes * decline * carbon_price * coverage * (1.0 - pass_through))
-            detail["scope2"][year] = max(0.0, scope2_tonnes * decline * carbon_price * coverage * scope2_incidence * (1.0 - pass_through))
-            detail["scope3"][year] = max(0.0, scope3_tonnes * decline * carbon_price * scope3_incidence * (1.0 - pass_through))
+            # Gross costs include coverage/incidence but exclude pass-through.
+            # Net costs apply pass-through exactly once; no later stage deducts
+            # pass-through again.
+            detail["scope1_gross"][year] = max(0.0, tonnes * decline * carbon_price * coverage)
+            detail["scope2_gross"][year] = max(0.0, scope2_tonnes * decline * carbon_price * coverage * scope2_incidence)
+            detail["scope3_gross"][year] = max(0.0, scope3_tonnes * decline * carbon_price * scope3_incidence)
+            detail["scope1"][year] = detail["scope1_gross"][year] * (1.0 - pass_through)
+            detail["scope2"][year] = detail["scope2_gross"][year] * (1.0 - pass_through)
+            detail["scope3"][year] = detail["scope3_gross"][year] * (1.0 - pass_through)
             components["transition"][year] = sum(detail[name][year] for name in ("scope1", "scope2", "scope3"))
             detail["acute"][year] = max(
                 0.0, (net_ppe or 0.0) * covered_ppe_share * (eal_rate or 0.0)
@@ -2640,25 +2657,43 @@ def issuer_prototype_valuation(
 
     def value_for(coalition):
         cashflows = []
+        annual_rows = []
         for year in years:
             elapsed = year - base_year
             baseline = base_fcff * ((1.0 + growth) ** elapsed)
-            losses = sum(
-                (target_components[name] if name in coalition else reference_components[name])[year]
+            selected = {
+                name: (target_components[name] if name in coalition else reference_components[name])[year]
                 for name in names
-            )
-            cashflows.append(max(0.0, baseline - losses))
+            }
+            losses = sum(selected.values())
+            pre_floor = baseline - losses
+            applied_cashflow = max(0.0, pre_floor)
+            cashflows.append(applied_cashflow)
+            annual_rows.append({
+                "year": year,
+                "baseline_fcff_usd": baseline,
+                "transition_pressure_usd": selected["transition"],
+                "physical_pressure_usd": selected["physical"],
+                "macro_supply_pressure_usd": selected["macro_supply"],
+                "gross_scenario_fcff_usd": pre_floor,
+                "scenario_fcff_usd": applied_cashflow,
+                "cash_flow_floor_usd": max(0.0, -pre_floor),
+                "discount_factor": 1.0 / ((1.0 + wacc) ** (year - base_year)),
+            })
         pv = sum(cashflow / ((1.0 + wacc) ** (index + 1)) for index, cashflow in enumerate(cashflows))
         terminal = cashflows[-1] * (1.0 + growth) / (wacc - growth)
-        return pv + terminal / ((1.0 + wacc) ** len(years)), cashflows
+        terminal_pv = terminal / ((1.0 + wacc) ** len(years))
+        return pv + terminal_pv, cashflows, annual_rows, pv, terminal, terminal_pv
 
     coalition_values = {}
     for mask in range(1 << len(names)):
         coalition = frozenset(names[index] for index in range(len(names)) if mask & (1 << index))
         coalition_values[coalition] = value_for(coalition)[0]
     reference_value = coalition_values[frozenset()]
-    target_value, target_cashflows = value_for(frozenset(names))
-    reference_cashflows = value_for(frozenset())[1]
+    target_result = value_for(frozenset(names))
+    reference_result = value_for(frozenset())
+    target_value, target_cashflows, target_annual, target_forecast_pv, target_terminal_value, target_terminal_pv = target_result
+    _, reference_cashflows, reference_annual, reference_forecast_pv, reference_terminal_value, reference_terminal_pv = reference_result
     shapley = {}
     n = len(names)
     for name in names:
@@ -2671,6 +2706,14 @@ def issuer_prototype_valuation(
         shapley[name] = contribution / reference_value
 
     value_impact = target_value / reference_value - 1.0
+    symmetric_value_difference = (
+        2.0 * (target_value - reference_value) / (abs(target_value) + abs(reference_value))
+        if abs(target_value) + abs(reference_value) > 0.0 else None
+    )
+    ev_ratio = target_value / reference_value if reference_value else None
+    denominator_sensitive = ev_ratio is None or ev_ratio >= 4.0 or ev_ratio <= 0.25
+    total_unapplied_cost = sum(row["cash_flow_floor_usd"] for row in target_annual)
+    terminal_fcff_clipped = target_annual[-1]["cash_flow_floor_usd"] > 0.0
     last_year = years[-1]
     channel_rows = []
     for name, label in (("transition", "Transition"), ("physical", "Physical"), ("macro_supply", "Macro / supply")):
@@ -2687,6 +2730,11 @@ def issuer_prototype_valuation(
     observed = {
         "normalized_fcff_usd": base_fcff,
         "fcff_status": input_row.get("fcff_status"),
+        "fcff_accounting_class": (
+            "Prototype demonstration assumption - not issuer-observed"
+            if "Model assumption" in str(input_row.get("fcff_status") or "")
+            else "Internally calculated unlevered-FCFF approximation from SEC CFO, CapEx, interest, and tax inputs"
+        ),
         "reported_free_cash_flow_usd": safe_float(input_row.get("reported_free_cash_flow_usd"), None),
         "scope1_tco2e": tonnes,
         "scope2_tco2e": scope2_tonnes,
@@ -2700,7 +2748,9 @@ def issuer_prototype_valuation(
         "ppe_period_end": enhanced_ppe.get("ppe_period_end"),
         "fema_building_eal_rate": eal_rate,
         "fema_eal_source": eal_source,
-        "fema_matches": int(safe_float(enhanced_physical.get("fema_eal_matches"), 0)),
+        "fema_facility_count": facility_count,
+        "fema_matches": fema_matches,
+        "fema_match_coverage": facility_match_coverage,
         "cie_terminal_labour_loss_target": cie_path(target_key).get(last_year, 0.0),
         "cie_terminal_labour_loss_reference": cie_path(reference_key).get(last_year, 0.0),
         "beta": safe_float(input_row.get("five_year_monthly_beta"), None),
@@ -2712,6 +2762,7 @@ def issuer_prototype_valuation(
         "risk_free_as_of": input_row.get("risk_free_as_of"),
         "wacc": wacc,
     }
+    assumption_label = "Prototype demonstration assumption - not issuer-observed"
     assumptions = {
         "case": case,
         "policy_coverage": coverage,
@@ -2730,21 +2781,101 @@ def issuer_prototype_valuation(
         "equity_risk_premium": safe_float(input_row.get("equity_risk_premium"), None),
         "terminal_growth": growth,
         "cash_flow_floor": "zero",
+        "assumption_classification": assumption_label,
+        "field_classifications": {
+            key: assumption_label for key in (
+                "policy_coverage", "pass_through", "scope2_cost_incidence",
+                "scope3_value_chain_incidence", "annual_emissions_decline",
+                "covered_ppe_share", "insurance_adaptation_recovery",
+                "labour_cost_share", "labour_productivity_to_fcff",
+                "acute_scenario_factor", "macro_cashflow_elasticity",
+                "macro_dependency_scale", "equity_risk_premium",
+                "terminal_growth", "forecast_growth_rule", "cash_flow_floor",
+            )
+        },
+        "forecast_growth_rule": "Terminal-growth assumption also used as the annual reference-FCFF growth path through the selected horizon",
     }
     terminal_detail = {
         key: target_components["detail"][key][last_year] - reference_components["detail"][key][last_year]
         for key in ("scope1", "scope2", "scope3", "acute", "chronic")
     }
+    transition_audit = []
+    annual_calculation = []
+    for target_row, reference_row in zip(target_annual, reference_annual):
+        year = target_row["year"]
+        target_gross = sum(target_components["detail"][key][year] for key in ("scope1_gross", "scope2_gross", "scope3_gross"))
+        reference_gross = sum(reference_components["detail"][key][year] for key in ("scope1_gross", "scope2_gross", "scope3_gross"))
+        target_net = target_components["transition"][year]
+        reference_net = reference_components["transition"][year]
+        transition_audit.append({
+            "year": year,
+            "target_gross_cost_usd": target_gross,
+            "reference_gross_cost_usd": reference_gross,
+            "target_net_cost_usd": target_net,
+            "reference_net_cost_usd": reference_net,
+            "net_transition_pressure_usd": target_net - reference_net,
+            "pass_through_application_count": 1,
+        })
+        annual_calculation.append({
+            "year": year,
+            "reference_baseline_fcff_usd": reference_row["baseline_fcff_usd"],
+            "target_transition_pressure_usd": target_components["transition"][year] - reference_components["transition"][year],
+            "target_physical_pressure_usd": target_components["physical"][year] - reference_components["physical"][year],
+            "target_macro_supply_pressure_usd": target_components["macro_supply"][year] - reference_components["macro_supply"][year],
+            "reference_scenario_fcff_usd": reference_row["scenario_fcff_usd"],
+            "target_gross_scenario_fcff_usd": target_row["gross_scenario_fcff_usd"],
+            "target_scenario_fcff_usd": target_row["scenario_fcff_usd"],
+            "unapplied_cost_due_to_floor_usd": target_row["cash_flow_floor_usd"],
+            "discount_factor": target_row["discount_factor"],
+            "target_present_value_usd": target_row["scenario_fcff_usd"] * target_row["discount_factor"],
+            "reference_present_value_usd": reference_row["scenario_fcff_usd"] * reference_row["discount_factor"],
+        })
+    if terminal_fcff_clipped or total_unapplied_cost > 0.0 or denominator_sensitive or physical_proxy_used:
+        ranking_status = "EXCLUDE"
+    elif facility_match_coverage < 0.75:
+        ranking_status = "CAUTION"
+    else:
+        ranking_status = "RANKABLE"
     return {
         "is_calculable": True,
         "release_id": climate_evidence.get("release_id") or valuation_release.get("release_id"),
         "assumption_case": case,
         "value_impact": value_impact,
+        "symmetric_value_difference": symmetric_value_difference,
+        "enterprise_value_delta_usd": target_value - reference_value,
+        "enterprise_value_ratio": ev_ratio,
         "reference_enterprise_value_usd": reference_value,
         "target_enterprise_value_usd": target_value,
         "reference_terminal_fcff_usd": reference_cashflows[-1],
         "target_terminal_fcff_usd": target_cashflows[-1],
         "terminal_fcff_delta_usd": target_cashflows[-1] - reference_cashflows[-1],
+        "annual_calculation": annual_calculation,
+        "transition_audit": transition_audit,
+        "valuation_audit": {
+            "reference_forecast_fcff_pv_usd": reference_forecast_pv,
+            "target_forecast_fcff_pv_usd": target_forecast_pv,
+            "reference_terminal_value_usd": reference_terminal_value,
+            "target_terminal_value_usd": target_terminal_value,
+            "reference_terminal_value_pv_usd": reference_terminal_pv,
+            "target_terminal_value_pv_usd": target_terminal_pv,
+            "terminal_fcff_clipped": terminal_fcff_clipped,
+            "total_unapplied_cost_usd": total_unapplied_cost,
+            "denominator_sensitive": denominator_sensitive,
+            "physical_proxy_used": physical_proxy_used,
+            "ranking_status": ranking_status,
+        },
+        "driver_registry": {
+            "transition": "Scope 1/2/3 emissions-price cost only; pass-through applied once",
+            "physical": "acute asset damage plus chronic labour-productivity conversion",
+            "macro_supply": "GDP and supply-chain shock only; excludes carbon-price cost and physical damage",
+            "double_counting_rule": "Each active driver belongs to exactly one pillar in this implementation",
+        },
+        "equity_bridge": {
+            "is_calculable": False,
+            "equity_value_usd": None,
+            "per_share_value_impact": None,
+            "reason_codes": ["MISSING_GOVERNED_CASH_AND_NET_DEBT_BRIDGE", "MISSING_OTHER_CLAIMS_AND_NON_OPERATING_ASSETS", "MISSING_DILUTED_SHARE_COUNT"],
+        },
         "channels": channel_rows,
         "terminal_component_detail": terminal_detail,
         "attribution_residual": value_impact - sum(shapley.values()),
@@ -2752,7 +2883,7 @@ def issuer_prototype_valuation(
         "model_assumptions": assumptions,
         "wacc": wacc,
         "terminal_growth": growth,
-        "status": "Prototype DCF completed with reported Scope 1/2/3, SEC PP&E, FEMA expected annual loss rates, NGFS/CIE pathways, and disclosed Low/Base/High financial-conversion assumptions; issuer facility exposure is not fully verified; no automatic trade, audited valuation, price target, forecast return, or probability",
+        "status": f"Prototype enterprise-value sensitivity completed; ranking status {ranking_status}. Issuer facility exposure is {'represented by a prototype fallback' if physical_proxy_used else 'coverage-qualified'}. All non-observed conversions are prototype demonstration assumptions, not issuer-observed inputs. No equity-value bridge, share-price impact, automatic trade, audited valuation, forecast return, or probability.",
     }
 
 
@@ -7198,7 +7329,7 @@ function renderClimateModelLab(d){
   const hasIssuerPilot = d.scope === "issuer" && pilot.is_loaded;
   const governanceBanner = document.getElementById("modelGovernanceBanner");
   if(governanceBanner){
-    governanceBanner.textContent = `Eight issuers · observed inputs · visible Low/Base/High assumptions`;
+    governanceBanner.textContent = `Eight issuers · source-backed inputs · prototype assumptions explicitly labelled`;
   }
   const financialEvidence = document.getElementById("issuerFinancialEvidence");
   const companyInfo = document.getElementById("issuerCompanyInfo");
@@ -7229,6 +7360,8 @@ function renderClimateModelLab(d){
         const observed = valuation.observed_inputs || {};
         const assumptions = valuation.model_assumptions || {};
         const channels = valuation.channels || [];
+        const audit = valuation.valuation_audit || {};
+        const equityBridge = valuation.equity_bridge || {};
         const channel = key => channels.find(row=>row.key===key) || {};
         const range = d.valuation_range || {};
         const selectedCase = String(valuation.assumption_case || "base");
@@ -7236,7 +7369,7 @@ function renderClimateModelLab(d){
           ? `${physical.fema_county_matches}/${physical.epa_parent_facilities} facilities matched`
           : `${Number(physical.disclosed_value||0).toFixed(0)}% disclosed exposure`;
         financialEvidence.style.display = "block";
-        financialEvidence.innerHTML = `<b>${companyNames[issuer.ticker] || issuer.ticker}</b> · ${issuer.sector} · SEC FCFF/PP&amp;E · reported Scope 1/2/3 · FEMA EAL · NGFS/CIE · ${selectedCase.toUpperCase()} assumptions`;
+        financialEvidence.innerHTML = `<b>${companyNames[issuer.ticker] || issuer.ticker}</b> · ${issuer.sector} · ${audit.ranking_status||"REVIEW"} · enterprise-value sensitivity · ${selectedCase.toUpperCase()} prototype assumptions`;
         if(companyInfo && companyInfoTitle){
           companyInfoTitle.style.display = "flex";
           companyInfoTitle.innerHTML = `<span>01</span>Valuation`;
@@ -7244,6 +7377,7 @@ function renderClimateModelLab(d){
             ["Modeled value impact", valuation.is_calculable?fmtSignedPct(valuation.value_impact):"Not calculable", Number(valuation.value_impact)>=0?"green":"red"],
             [`${d.horizon} FCFF change`, valuation.is_calculable?fmtMoneyCompact(valuation.terminal_fcff_delta_usd):"-", Number(valuation.terminal_fcff_delta_usd)>=0?"green":"red"],
             ["Low / base / high", `${fmtSignedPct(range.low)} / ${fmtSignedPct(range.base)} / ${fmtSignedPct(range.high)}`, "blue"],
+            ["Symmetric EV difference", valuation.symmetric_value_difference===null?"-":fmtSignedPct(valuation.symmetric_value_difference), Number(valuation.symmetric_value_difference)>=0?"green":"red"],
             ["WACC / terminal g", `${fmtPct(valuation.wacc)} / ${fmtPct(valuation.terminal_growth)}`, "blue"]
           ].map(c=>`<div class="signal-card"><div class="label">${c[0]}</div><div class="value ${c[2]}">${c[1]}</div></div>`).join("");
         }
@@ -7269,10 +7403,17 @@ function renderClimateModelLab(d){
           issuerValuationCard.innerHTML = `<div class="label">Discounted enterprise-value impact</div>`+
             `<div class="value">${fmtSignedPct(valuation.value_impact)}</div>`+
             `<div class="detail">${fmtMoneyCompact(valuation.reference_enterprise_value_usd)} → ${fmtMoneyCompact(valuation.target_enterprise_value_usd)}<br>`+
-            `Common WACC ${fmtPct(valuation.wacc)} · ${selectedCase} case<br>Modeled sensitivity, not a price target.</div>`;
+            `Status ${audit.ranking_status||"REVIEW"} · common WACC ${fmtPct(valuation.wacc)}<br>`+
+            `${audit.terminal_fcff_clipped?"Terminal FCFF floor applied · ":""}${audit.physical_proxy_used?"physical proxy used · ":""}`+
+            `${equityBridge.is_calculable?"Equity bridge available":"EV only; no share-price impact"}.</div>`;
           const dominant = [...channels].sort((a,b)=>Math.abs(Number(b.value_contribution||0))-Math.abs(Number(a.value_contribution||0)))[0] || {};
+          const comparisonUse = audit.ranking_status === "RANKABLE"
+            ? "Rank peers only within the same scenario and assumption case."
+            : audit.ranking_status === "CAUTION"
+              ? "Compare only with an explicit coverage warning."
+              : "Do not include this result in an ordinary issuer ranking.";
           issuerInvestmentImpact.innerHTML = [
-            ["Compare",`Main driver: ${dominant.label || "-"}`,"Rank peers on one scenario boundary."],
+            ["Compare",`Main driver: ${dominant.label || "-"}`,comparisonUse],
             ["Review","Low / Base / High","Challenge exposure, resilience and pass-through."],
             ["Use","Risk budget / engagement","Long-horizon review; no automatic trade."]
           ].map(c=>`<div class="investment-impact-card"><div class="label">${c[0]}</div><div class="headline">${c[1]}</div><div class="copy">${c[2]}</div></div>`).join("");
@@ -7284,21 +7425,23 @@ function renderClimateModelLab(d){
           issuerCalculationTable.style.display = "table";
           const detail = valuation.terminal_component_detail || {};
           const rows = [
-            ["Observed", "Normalized FCFF", observed.fcff_status, fmtMoneyCompact(observed.normalized_fcff_usd)],
+            [String(observed.fcff_accounting_class||"").startsWith("Prototype")?"Demo assumption":"Calculated", "Normalized FCFF", `${observed.fcff_status}; ${observed.fcff_accounting_class||""}`, fmtMoneyCompact(observed.normalized_fcff_usd)],
             ["Observed", "Reported Scope 1 / 2 / 3", transition.source_title || "Issuer report", `${Number(observed.scope1_tco2e||0).toLocaleString()} / ${Number(observed.scope2_tco2e||0).toLocaleString()} / ${Number(observed.scope3_tco2e||0).toLocaleString()} tCO2e`],
             ["Observed", "SEC net PP&E", `Period end ${observed.ppe_period_end||"-"}`, fmtMoneyCompact(observed.net_ppe_usd)],
-            ["Observed", "FEMA building EAL rate", `${observed.fema_eal_source}; ${observed.fema_matches||0} matches`, fmtPct(observed.fema_building_eal_rate)],
+            [audit.physical_proxy_used?"Demo assumption":"Observed/derived", "FEMA building EAL rate", `${observed.fema_eal_source}; ${observed.fema_matches||0}/${observed.fema_facility_count||0} matches${audit.physical_proxy_used?"; prototype fallback":""}`, fmtPct(observed.fema_building_eal_rate)],
             ["Observed", "CIE heat-productivity loss", `Target / reference at ${d.horizon}`, `${fmtPct(observed.cie_terminal_labour_loss_target)} / ${fmtPct(observed.cie_terminal_labour_loss_reference)}`],
             ["Observed", "SEC CapEx / CFO", "Company macro/supply dependency input", fmtPct(observed.capex_to_operating_cash_flow)],
             ["Observed", "Beta / Treasury", `${observed.beta_observations} monthly returns; Treasury ${observed.risk_free_as_of}`, `${Number(observed.beta||0).toFixed(2)} / ${fmtPct(observed.risk_free_rate)}`],
-            ["Assumption", "Policy coverage / pass-through", selectedCase, `${fmtPct(assumptions.policy_coverage)} / ${fmtPct(assumptions.pass_through)}`],
-            ["Assumption", "Scope 2 / Scope 3 incidence", "Purchased energy / value chain", `${fmtPct(assumptions.scope2_cost_incidence)} / ${fmtPct(assumptions.scope3_value_chain_incidence)}`],
-            ["Assumption", "Emissions decline", "Annual", fmtPct(assumptions.annual_emissions_decline)],
-            ["Assumption", "Covered PP&E / recovery", "Facility allocation / insurance + adaptation", `${fmtPct(assumptions.covered_ppe_share)} / ${fmtPct(assumptions.insurance_adaptation_recovery)}`],
+            ["Demo assumption", "Policy coverage / pass-through", `${selectedCase}; not issuer-observed`, `${fmtPct(assumptions.policy_coverage)} / ${fmtPct(assumptions.pass_through)}`],
+            ["Demo assumption", "Scope 2 / Scope 3 incidence", "Purchased energy / value chain; not issuer-observed", `${fmtPct(assumptions.scope2_cost_incidence)} / ${fmtPct(assumptions.scope3_value_chain_incidence)}`],
+            ["Demo assumption", "Emissions decline", "Annual; not issuer-observed", fmtPct(assumptions.annual_emissions_decline)],
+            ["Demo assumption", "Covered PP&E / recovery", "Facility allocation / insurance + adaptation; not issuer-observed", `${fmtPct(assumptions.covered_ppe_share)} / ${fmtPct(assumptions.insurance_adaptation_recovery)}`],
             ["Calculation", "Transition components", "Scope 1 + Scope 2 + Scope 3", `${fmtMoneyCompact(-Number(detail.scope1||0))} / ${fmtMoneyCompact(-Number(detail.scope2||0))} / ${fmtMoneyCompact(-Number(detail.scope3||0))}`],
             ["Calculation", "Physical components", "Acute FEMA EAL + chronic CIE heat", `${fmtMoneyCompact(-Number(detail.acute||0))} / ${fmtMoneyCompact(-Number(detail.chronic||0))}`],
-            ["Assumption", "Macro transmission", assumptions.macro_dependency_rule, `${fmtPct(assumptions.macro_cashflow_elasticity)} × ${Number(assumptions.macro_dependency_scale||0).toFixed(2)}`],
-            ["Valuation", "Target vs reference", "Annual FCFF + terminal value; common WACC", fmtSignedPct(valuation.value_impact)]
+            ["Demo assumption", "Macro transmission", `${assumptions.macro_dependency_rule}; not issuer-observed`, `${fmtPct(assumptions.macro_cashflow_elasticity)} × ${Number(assumptions.macro_dependency_scale||0).toFixed(2)}`],
+            ["Demo assumption", "Forecast growth / terminal growth", assumptions.forecast_growth_rule, fmtPct(valuation.terminal_growth)],
+            ["Calculation", "Transition difference", "Target net cost - reference net cost; pass-through applied once", fmtMoneyCompact(-Number(channel("transition").terminal_cash_flow_delta_usd||0))],
+            ["Valuation", "Target vs reference EV", `Annual FCFF + terminal value; ${audit.ranking_status||"REVIEW"}; no equity/share-price bridge`, fmtSignedPct(valuation.value_impact)]
           ];
           issuerCalculationTable.innerHTML = `<tr><th>Class</th><th>Input</th><th>Source / rule</th><th>Value</th></tr>`+
             rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");

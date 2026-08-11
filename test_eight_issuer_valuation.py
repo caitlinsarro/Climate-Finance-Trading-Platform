@@ -50,8 +50,50 @@ class EightIssuerValuationTests(unittest.TestCase):
         self.assertIn("Inputs, assumptions and calculation detail", app.HTML)
         self.assertIn("#regimeBadge,#sourceBadge,#timeBadge,#client-section,#cvor-section{display:none!important}", app.HTML)
         self.assertIn("Long-term scenario valuation prototype", app.HTML)
-        self.assertIn("Eight issuers · observed inputs · visible Low/Base/High assumptions", app.HTML)
+        self.assertIn("Eight issuers · source-backed inputs · prototype assumptions explicitly labelled", app.HTML)
+        self.assertIn("Demo assumption", app.HTML)
         self.assertNotIn("Comparable evidence by risk channel", app.HTML)
+
+    def test_repair_audit_exposes_annual_paths_and_ev_only_boundary(self):
+        value = app.climate_model_lab_payload(
+            scope="issuer", target="current_policies", reference="baseline",
+            horizon=2050, sector="Utilities", ticker="DUK", assumption_case="base",
+        )["prototype_valuation"]
+        self.assertEqual(len(value["annual_calculation"]), 25)
+        self.assertEqual(len(value["transition_audit"]), 25)
+        self.assertFalse(value["equity_bridge"]["is_calculable"])
+        self.assertIsNone(value["equity_bridge"]["per_share_value_impact"])
+        self.assertIn(value["valuation_audit"]["ranking_status"], {"RANKABLE", "CAUTION", "EXCLUDE"})
+        self.assertAlmostEqual(
+            value["symmetric_value_difference"],
+            2 * (value["target_enterprise_value_usd"] - value["reference_enterprise_value_usd"])
+            / (abs(value["target_enterprise_value_usd"]) + abs(value["reference_enterprise_value_usd"])),
+            places=12,
+        )
+
+    def test_transition_is_target_net_cost_less_reference_net_cost(self):
+        value = app.climate_model_lab_payload(
+            scope="issuer", target="current_policies", reference="delayed_transition",
+            horizon=2050, sector="Utilities", ticker="DUK", assumption_case="base",
+        )["prototype_valuation"]
+        terminal = value["transition_audit"][-1]
+        channel = next(row for row in value["channels"] if row["key"] == "transition")
+        self.assertEqual(terminal["pass_through_application_count"], 1)
+        self.assertAlmostEqual(
+            terminal["target_net_cost_usd"] - terminal["reference_net_cost_usd"],
+            terminal["net_transition_pressure_usd"], places=6,
+        )
+        self.assertAlmostEqual(terminal["net_transition_pressure_usd"], channel["terminal_cash_flow_delta_usd"], places=6)
+
+    def test_every_assumption_is_explicitly_demo_only(self):
+        value = app.climate_model_lab_payload(
+            scope="issuer", target="current_policies", reference="baseline",
+            horizon=2050, sector="Utilities", ticker="DUK", assumption_case="base",
+        )["prototype_valuation"]
+        assumptions = value["model_assumptions"]
+        self.assertEqual(assumptions["assumption_classification"], "Prototype demonstration assumption - not issuer-observed")
+        self.assertTrue(assumptions["field_classifications"])
+        self.assertEqual(set(assumptions["field_classifications"].values()), {assumptions["assumption_classification"]})
 
 
 if __name__ == "__main__":

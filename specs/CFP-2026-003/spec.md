@@ -321,3 +321,86 @@ fill a missing company result with a manual coefficient.
     monotonicity, missing-data behavior, source/assumption separation, API
     output, and browser presentation. Engineering acceptance remains separate
     from model or investment approval.
+
+## Increment 11 — report chart and comparison export
+
+1. A versioned Python export MUST calculate all eight governed demo issuers by
+   calling the application model, not by copying presentation values or
+   duplicating valuation formulas.
+2. The export MUST include at least Current Policies versus the analytical
+   baseline, Net Zero 2050 versus the analytical baseline, Below 2C versus
+   Current Policies, Current Policies versus Delayed Transition, and
+   Fragmented World versus the analytical baseline at 2050.
+3. Low/Base/High outputs, value impact, annual transition/physical/macro-supply
+   channel rates and amounts, FCFF, WACC, terminal growth, Scope 1/2/3, FEMA
+   facility coverage, and release ID MUST be retained in CSV form.
+4. Report figures MUST include cross-issuer value impact, channel attribution,
+   scenario comparison, assumption range, emissions exposure, and physical
+   exposure/coverage views.
+5. Non-calculable outputs MUST remain missing with a reason; they MUST NOT be
+   plotted as zero. Every figure MUST state the scenario, horizon, assumption
+   case, and research-prototype limitation.
+6. The existing DCF and risk formulas MUST remain unchanged. This increment is
+   an analytical export and presentation layer, not a model recalibration or
+   model-promotion decision.
+
+## Increment 12 — diagnostic chart and workbook revision
+
+1. Every issuer-scenario row MUST identify target/reference EV floors,
+   absolute relative-value impacts at or above 100%, and the result's intended
+   interpretation as an extreme stress or ordinary scenario sensitivity.
+2. Facility match coverage MUST be calculated from matched and total governed
+   facilities. Confidence MUST be `High` above 80%, `Medium` from 50% through
+   80%, `Low` below 50%, and `Unverified` when no issuer facilities exist.
+3. AAPL and MSFT FEMA rates MUST be labelled as proxy/fallback inputs and MUST
+   NOT be presented as observed issuer-specific facility loss rates.
+4. The output MUST identify the common macro elasticity as a shared model
+   assumption rather than issuer-specific observed evidence.
+5. Scope 2/3 incidence, policy coverage, pass-through, emissions decline,
+   covered PP&E and recovery assumptions MUST be retained in the export so the
+   transition and physical conversions are auditable.
+6. The DUK terminal-FCFF bridge MUST use the model's 2050 reference FCFF,
+   channel amounts and target FCFF and MUST reconcile exactly.
+7. Revised figures MUST include Net Zero Low/Base/High ranges, transition share
+   by issuer, physical-data confidence, and an extreme-value diagnostic in
+   addition to the cross-scenario heatmap.
+8. A single Excel workbook MUST separate Inputs, Scenario Results, Base Matrix,
+   Data Quality, Checks and Read Me; summaries and checks MUST reference the
+   governed output sheets with formulas, retain numeric types/units, and expose
+   the R17 release and research-only limitation.
+9. Extreme values MUST remain visible and uncapped in source tables. Visual
+   colour caps or axis breaks MAY improve readability only when disclosed.
+10. Validation MUST include terminal-FCFF bridge reconciliation, confidence
+    classification, proxy labelling, formula-error scans and rendered workbook
+    inspection. Model-promotion status remains unchanged.
+
+## Increment 13 — repair-review integration requirements
+
+1. Net transition pressure MUST equal the target net emissions-price cost less
+   the reference net emissions-price cost for every year and scope. The API
+   MUST expose both sides of the subtraction.
+2. Pass-through MUST be applied exactly once to each eligible direct cost.
+3. The API MUST expose annual reference/target baseline FCFF, three channel
+   pressures, scenario FCFF, discount factor and present value through the
+   selected horizon.
+4. Cash-flow clipping MUST expose gross pre-floor FCFF, applied floor and
+   unapplied pressure. A clipped or zero-EV result MUST NOT be displayed as an
+   ordinary point estimate or rankable output.
+5. Relative EV impact, symmetric EV difference and dollar EV difference MUST be
+   returned together. A denominator-sensitive result MUST be flagged.
+6. Every non-observed parameter MUST carry the label `Prototype demonstration
+   assumption - not issuer-observed` and remain visible in the UI.
+7. AAPL/MSFT or any issuer using a cross-issuer FEMA fallback MUST be labelled
+   physical proxy; the result remains a demonstration sensitivity rather than
+   issuer-observed physical loss.
+8. The macro/supply driver registry MUST state that carbon-price costs and
+   physical damage are excluded from that pillar in the active implementation.
+9. FCFF accounting status MUST distinguish observed source fields, internally
+   calculated unlevered-FCFF approximation and maintenance-CapEx assumption.
+10. Equity value and per-share impact MUST return null plus reason codes until
+    a governed EV-to-equity bridge is available.
+11. Equal target/reference scenarios MUST conserve all channel, FCFF and value
+    deltas at zero; transition target/reference arithmetic, annual path, floor,
+    symmetric metric, assumption labels and EV-only semantics require tests.
+12. The release remains a research prototype and is not promoted for Jennison
+    investment use by this engineering repair.

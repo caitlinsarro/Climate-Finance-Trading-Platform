@@ -224,3 +224,60 @@ probability, audited valuation, price target, or automatic investment decision.
 External vendor benchmarking, issuer facility economics, policy-jurisdiction
 mapping, supplier/customer weights, parameter estimation from history, and
 independent quant approval remain required before promotion.
+
+## Increment 11 decision
+
+**Accepted for reproducible cross-issuer report export; model promotion remains
+Iterate.**
+
+The exporter is accepted because it invokes the governed application model for
+all eight demo issuers, five scenario comparisons and all three disclosed
+assumption cases, then preserves the result and inputs in tidy CSV files. The
+seven report figures make absolute sensitivity, channel attribution, scenario
+dependence, rank stability, emissions evidence, physical-evidence coverage and
+the DUK FCFF bridge available without hand-entering presentation values.
+
+This decision accepts an analytical and presentation layer only. Extreme
+scenario results caused by the terminal cash-flow floor remain visible and are
+not evidence of forecast probability. Facility gaps remain labelled, not
+converted to zero. R17 assumptions, external-benchmark gaps and the separation
+between engineering acceptance and investment/model approval are unchanged.
+
+## Increment 12 decision
+
+**Accepted for client-review diagnostics and workbook; model promotion remains
+Iterate.**
+
+The revised reporting layer is accepted because it keeps extreme outputs
+visible while identifying their mathematical cause, separates issuer-facility
+evidence from physical proxies, exposes the shared macro elasticity alongside
+the issuer SEC dependency scale, and reconciles DUK's 2050 terminal-FCFF bridge.
+The seven-sheet workbook preserves source rows and formulas, supplies a source
+audit, and reports all export checks as `OK`.
+
+This acceptance does not validate DUK's floor outcome as a point Climate VaR,
+convert the `+425.67%` relative scenario differential into an expected return,
+or make AAPL/MSFT physical inputs issuer-specific. The charts and workbook are
+appropriate for scenario comparison, driver attribution, assumption
+sensitivity and data-gap review. Bloomberg/MSCI replication, parameter
+estimation, out-of-sample validation and independent investment approval remain
+outside the accepted boundary.
+
+## Increment 13 decision
+
+**Engineering Accepted for repair-review integration; model promotion remains
+Iterate.**
+
+The source engine and disclosures are accepted because target/reference costs,
+annual FCFF paths, discount timing, pass-through treatment, floor effects,
+denominator sensitivity, proxy use and the enterprise-value boundary are now
+explicit and regression-tested. The reviewed workbook and calculation PDF use
+the same boundary and mark unsupported parameters as prototype demonstration
+assumptions rather than issuer facts.
+
+This decision does not approve the prototype as production Climate VaR, an
+audited issuer valuation, an equity or share-price model, or an automatic
+ranking/trading tool. Results marked `EXCLUDE` must not enter ordinary issuer
+ranking; `CAUTION` requires review; only same-scenario `RANKABLE` results may be
+compared, and even those remain demonstration sensitivities pending external
+benchmarking and independent quant validation.
