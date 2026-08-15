@@ -731,3 +731,37 @@ Increment 13 conclusion: Engineering Accepted for repair integration and
 demonstration disclosure. Quant/model promotion remains Iterate because the
 remaining incidence, physical conversion, macro transmission, forecast-growth
 and EV-to-equity inputs are not independently estimated or validated.
+
+## Increment 14 validation — repository audience hygiene
+
+The repository audit hashed every tracked PDF and confirmed that the two
+root-level DUK PDFs were exact duplicates of files under `output/pdf/`. The
+older Jennison methodology predates the current eight-issuer repair engine and
+was removed with its TeX source. DUK-only duplicate guides and nonessential
+chart-folder documentation were also removed. The untracked slides 11-12
+speaker-script handoff was moved to a dated Downloads archive rather than
+destroyed.
+
+Retained supported client references:
+
+- `output/pdf/climate_model_calculation_workflow.pdf`;
+- `output/pdf/eight_issuer_climate_scenario_valuation_methodology.pdf`.
+
+README now directs Jennison users to the application and these two documents.
+Scripts, tests, specifications, and data-rebuild operations are labelled
+maintainer-only. All eight active test modules remain because they reproduce
+the validation claims recorded in this feature.
+
+Validation evidence before and after cleanup:
+
+```text
+.venv/bin/python -m unittest discover -v
+Ran 96 tests — OK
+
+.venv/bin/python -m py_compile \
+  app.py scripts/build_report_charts.py scripts/ingest_authoritative_data.py
+git diff --check
+```
+
+Compilation and whitespace checks passed. Application code, governed releases,
+calculation outputs, and model-promotion status were unchanged.

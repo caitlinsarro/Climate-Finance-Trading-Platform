@@ -13,3 +13,10 @@
 **Research only.** Conditional scenario sensitivities and pressure indicators
 must not be represented as forecasts, probabilities, production loss estimates,
 or investment-authorized model outputs.
+
+## Repository audience hygiene — 2026-08-14
+
+CFP-2026-003 Increment 14 removes duplicate and superseded client documents,
+retains one calculation guide and one current eight-issuer methodology, and
+labels scripts/tests/governance as maintainer-only. Model code, governed data,
+calculations, and research-only promotion status are unchanged.

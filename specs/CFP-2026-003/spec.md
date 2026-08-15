@@ -404,3 +404,16 @@ fill a missing company result with a manual coefficient.
     symmetric metric, assumption labels and EV-only semantics require tests.
 12. The release remains a research prototype and is not promoted for Jennison
     investment use by this engineering repair.
+
+## Increment 14 — repository cleanup requirements
+
+1. README MUST identify the application as the client entry point and mark
+   scripts, tests, specifications, and ingestion operations as maintainer-only.
+2. Retain only the current calculation-flow and eight-issuer methodology PDFs
+   as supported repository references.
+3. Remove exact duplicate DUK PDFs, superseded pre-repair methodology sources
+   and outputs, and nonessential chart-folder documentation.
+4. Automated tests and active governance records MUST remain reproducible and
+   MUST NOT be deleted merely to make the repository appear simpler.
+5. Application code, governed releases, calculations, and model-promotion
+   status MUST remain unchanged.

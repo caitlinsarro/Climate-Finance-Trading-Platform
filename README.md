@@ -4,6 +4,19 @@ This repository is a research prototype for transparent climate scenario analysi
 
 The model is **not promoted for portfolio construction, security recommendations, tactical trading, audited valuation, or regulatory Climate VaR**. Engineering acceptance is separate from model and investment approval.
 
+## Client demo entry point
+
+Jennison users should use only the running application and the two retained
+client references:
+
+- `output/pdf/climate_model_calculation_workflow.pdf` for the calculation flow;
+- `output/pdf/eight_issuer_climate_scenario_valuation_methodology.pdf` for the
+  bounded eight-issuer methodology.
+
+The `scripts/`, `test_*.py`, `.specify/`, and `specs/` paths are maintainer
+assets. They are retained for reproducibility and model governance, not as
+client workflows or supported Jennison tools.
+
 ## Current governed scope
 
 The client-facing application currently supports:
@@ -124,62 +137,11 @@ python3 -m venv .venv
 
 Open `http://127.0.0.1:8865`.
 
-## Ingest free official data
+## Maintainer-only data and validation assets
 
-Check optional credentials without displaying their values:
-
-```bash
-.venv/bin/python scripts/ingest_authoritative_data.py status
-```
-
-Load a governed U.S. Treasury release without an API key:
-
-```bash
-.venv/bin/python scripts/ingest_authoritative_data.py treasury \
-  --release-id CFP-2026-003-R2-YYYYMMDDTHHMMZ \
-  --treasury-year 2026
-```
-
-Load the official NGFS transition release without a permanent API key:
-
-```bash
-.venv/bin/python scripts/ingest_authoritative_data.py ngfs-transition \
-  --release-id CFP-2026-003-RX-YYYYMMDDTHHMMZ \
-  --ngfs-region USA \
-  --ngfs-end-year 2050
-```
-
-After exporting an SEC-compliant `SEC_USER_AGENT` locally, download and process all published quarterly SEC Financial Statement Data Sets from 2009 Q1 through 2026 Q1:
-
-```bash
-.venv/bin/python scripts/ingest_authoritative_data.py sec-financials \
-  --release-id CFP-2026-003-RX-YYYYMMDDTHHMMZ \
-  --sec-start-year 2009 \
-  --sec-end-year 2026 \
-  --sec-end-quarter 1
-```
-
-Raw quarterly ZIP files stay local and are ignored by Git; processed facts and the hash manifest remain governed. The command resumes from already-downloaded immutable archives.
-
-Never reuse a release ID or overwrite immutable release bytes.
-
-Build a new DUK evidence release (the SEC contact is supplied only as a local
-environment variable and is never stored):
-
-```bash
-.venv/bin/python scripts/build_duke_pilot.py \
-  --release-id CFP-2026-003-RX-YYYYMMDDTHHMMZ \
-  --sec-release-id CFP-2026-003-R8-20260801T005207Z \
-  --ngfs-release-id CFP-2026-003-R5-20260731T2351Z
-```
-
-## Tests
-
-```bash
-.venv/bin/python -m unittest -v \
-  test_climate_methodology.py \
-  test_authoritative_ingestion.py \
-  test_duke_pilot.py
-```
-
-The tests cover engineering contracts, reconciliation, fail-closed behavior, and release integrity. They do not establish forecast accuracy, damage-function validity, or investment usefulness.
+Data-ingestion scripts, immutable-release builders, and automated tests are not
+required to run the client demo. Maintainers should consult
+`docs/api-access.md`, the active `specs/CFP-2026-003/` records, and the test
+modules before rebuilding data or changing calculations. These assets preserve
+reproducibility; they do not establish forecast accuracy, damage-function
+validity, model promotion, or investment usefulness.

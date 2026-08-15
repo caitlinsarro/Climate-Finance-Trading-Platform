@@ -143,3 +143,13 @@
    full suite, API tie-outs and local browser visual verification.
 7. Record validation, engineering decision and roadmap state separately from
    model promotion.
+
+## Increment 14 implementation plan
+
+1. Hash and cross-reference all tracked PDFs, documentation, and tests.
+2. Run the full test suite before cleanup.
+3. Remove duplicate and superseded client-confusing documentation only.
+4. Rewrite the README entry points so client and maintainer workflows are
+   unambiguous.
+5. Re-run tests, Python compilation, and Git whitespace checks; record the
+   exact retained and deleted artifacts.

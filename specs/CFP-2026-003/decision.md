@@ -281,3 +281,17 @@ ranking/trading tool. Results marked `EXCLUDE` must not enter ordinary issuer
 ranking; `CAUTION` requires review; only same-scenario `RANKABLE` results may be
 compared, and even those remain demonstration sensitivities pending external
 benchmarking and independent quant validation.
+
+## Increment 14 decision
+
+**Engineering Accepted for repository audience hygiene; model status
+unchanged.**
+
+Duplicate and superseded client-facing documents are removed, the README has a
+single client entry point, and the two current reference PDFs remain. Active
+tests and governance artifacts are retained because deleting them would break
+reproducibility and conflict with the constitution's validation requirements.
+
+This decision changes repository packaging only. It does not change model
+formulas, data, results, permitted use, or the existing research-only / Iterate
+model-promotion decision.

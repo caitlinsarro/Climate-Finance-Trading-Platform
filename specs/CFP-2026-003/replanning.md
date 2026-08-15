@@ -519,3 +519,17 @@ The user has explicitly permitted missing calibration inputs to remain in the
 prototype. Every such input MUST be labelled `Prototype demonstration
 assumption - not issuer-observed` in the payload and client-facing calculation
 table. This permission does not change the research-only promotion status.
+
+## Increment 14 replanning decision — repository audience hygiene
+
+The repository accumulated duplicate DUK guides, a superseded pre-repair
+methodology report, and an untracked presentation handoff. These files can make
+an external reader assume several inconsistent documents are supported client
+workflows.
+
+The repository will retain one calculation-flow PDF, one current eight-issuer
+methodology PDF, the application README, API-access controls, active governance
+records, and automated tests. Exact binary duplicates, superseded methodology
+artifacts, and chart-folder notes that are not required to run or validate the
+model will be removed. Active tests will not be deleted: they are durable
+validation evidence required by the constitution and are not client tools.
