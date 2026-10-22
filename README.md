@@ -104,6 +104,10 @@ Currently loaded for feature `CFP-2026-003`:
   1/2/3, SEC net PP&E, expanded FEMA building EAL rates, CIE USA
   heat-productivity paths, and 24 Low/Base/High assumption rows are retained and
   hash verified. FEMA scores no longer create issuer loss rates.
+- Third-party data attribution: nasdaq_stock_screener.json contains stock screener and market information sourced from Nasdaq's public-facing stock screener. Source: Nasdaq Stock Screener 
+Nasdaq is not affiliated with or endorsing this project. The project's software license does not grant additional rights to third-party data. Users should consult the applicable Nasdaq terms for permitted use and redistribution.
+
+License: This project’s code is released under the MIT License. This license applies only to material the licensor has the right to license; third-party datasets and other third-party materials may be subject to separate terms. 
 
 Available governed context from earlier releases includes NWS alerts, NOAA Storm Events, and the issuer-sector master. These datasets do not by themselves establish issuer facility exposure or climate loss.
 
@@ -115,6 +119,8 @@ benchmarks remain future work.
 SEC financial data require no API key. The completed downloader preserves each raw ZIP locally, supports resume and source-release reprocessing, resolves controlled historical registrant CIK aliases, and extracts governed candidate-issuer facts. The contact email used for SEC fair-access compliance is not stored. The model still fails closed on issuer FCFF until filing and accounting tie-outs are completed.
 
 See [docs/api-access.md](docs/api-access.md) for access rules and local credentials. Secrets must never be committed, logged, written to workbooks, or included in release manifests.
+
+
 
 ## Governed workflow
 
