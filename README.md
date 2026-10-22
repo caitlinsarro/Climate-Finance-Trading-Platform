@@ -1,4 +1,4 @@
-# Jennison Climate-Risk Research Platform
+# Climate-Risk Research Platform
 
 This repository is a research prototype for transparent climate scenario analysis. It separates physical risk, macro and supply-chain transmission, and direct transition channels so an analyst can see what drives a result.
 
@@ -106,6 +106,8 @@ Currently loaded for feature `CFP-2026-003`:
   hash verified. FEMA scores no longer create issuer loss rates.
 - Third-party data attribution: nasdaq_stock_screener.json contains stock screener and market information sourced from Nasdaq's public-facing stock screener. Source: Nasdaq Stock Screener 
 Nasdaq is not affiliated with or endorsing this project. The project's software license does not grant additional rights to third-party data. Users should consult the applicable Nasdaq terms for permitted use and redistribution.
+
+Project Background: This platform was originally developed as part of a student capstone project. It is shared for further development and use by the climate finance community.
 
 License: This project’s code is released under the MIT License. This license applies only to material the licensor has the right to license; third-party datasets and other third-party materials may be subject to separate terms. 
 
